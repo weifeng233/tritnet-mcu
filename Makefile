@@ -2,7 +2,11 @@ CC ?= cc
 
 # clang ignores the in-file `#pragma GCC target`, so on x86 the AVX2/FMA
 # feature flags have to be passed explicitly or the intrinsics won't build.
-UNAME_M := $(shell uname -m)
+ifeq ($(OS),Windows_NT)
+  UNAME_M := x86_64
+else
+  UNAME_M := $(shell uname -m)
+endif
 ifeq ($(filter arm64 aarch64,$(UNAME_M)),)
   ARCHFLAGS ?= -march=native -mavx2 -mfma
 else

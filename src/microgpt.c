@@ -38,6 +38,15 @@
     return ts.tv_sec + ts.tv_nsec * 1e-9;
   }
 #endif
+#ifdef _WIN32
+  #include <malloc.h>
+  #define MG_ALIGNED_ALLOC(a, n) _aligned_malloc((n), (a))
+  #define MG_ALIGNED_FREE(p)     _aligned_free(p)
+#else
+  #define MG_ALIGNED_ALLOC(a, n) aligned_alloc((a), (n))
+  #define MG_ALIGNED_FREE(p)     free(p)
+#endif
+
 #ifdef MG_SIMD_AVX2
   #include <immintrin.h>
 #else
@@ -888,16 +897,21 @@ void rmsnorm_infer(const float *restrict x, float *restrict out) {
 
 static void build_pretok(void) {
   size_t n = (size_t)vocab_size * BLOCK_SIZE;
-  pretok = (PreTok *)aligned_alloc(64, n * sizeof(PreTok));
+  size_t bytes = (n * sizeof(PreTok) + 63u) & ~(size_t)63u;
+  pretok = (PreTok *)MG_ALIGNED_ALLOC(64, bytes);
+  if (!pretok) {
+    fprintf(stderr, "out of memory\n");
+    exit(1);
+  }
   for (int t = 0; t < vocab_size; t++)
     for (int p = 0; p < BLOCK_SIZE; p++) {
-      float x[N_EMBD], xn[N_EMBD];
+      float x[N_EMBD], xr[N_EMBD], xn[N_EMBD];
       for (int i = 0; i < N_EMBD; i++)
         x[i] = wte[(size_t)t * N_EMBD + i] + wpe[(size_t)p * N_EMBD + i];
-      rmsnorm_infer(x, x);
+      rmsnorm_infer(x, xr);
       PreTok *e = &pretok[(size_t)t * BLOCK_SIZE + p];
-      memcpy(e->xin, x, sizeof(x));
-      rmsnorm_infer(x, xn);
+      memcpy(e->xin, xr, sizeof(xr));
+      rmsnorm_infer(xr, xn);
       mv16_blk16(xn, iw_q[0], N_EMBD, e->q);
       mv16_blk16(xn, iw_k[0], N_EMBD, e->k);
       mv16_blk16(xn, iw_v[0], N_EMBD, e->v);
@@ -1473,5 +1487,6 @@ int main(int argc, char **argv) {
     free(adam_m_fc2[i]);
     free(adam_v_fc2[i]);
   }
+  MG_ALIGNED_FREE(pretok);
   return 0;
 }
