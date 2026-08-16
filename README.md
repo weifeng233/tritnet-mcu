@@ -165,12 +165,31 @@ Batching is the change that would lift the ceiling. Several independent
 sequences at once turns every matvec into a matmul and gives the weights
 the reuse they currently have none of.
 
-## AVX2 numbers are unverified
+## Performance
 
-The AVX2 backend was written and validated under Rosetta 2 on Apple
-Silicon. That is fine for checking correctness and useless for
-benchmarking, because Rosetta turns 256-bit AVX2 into pairs of 128-bit
-NEON operations, so the width advantage the backend exists for is the
-first thing it discards. Measured there it beats the path it replaces by
-27%. Native x86 should do better than that. Nobody has run it on real x86
-hardware yet, so treat the AVX2 number as unverified.
+Single-threaded, on the benchmark's 5M token sampling loop:
+
+| machine | backend | tok/sec | |
+| --- | --- | --- | --- |
+| Apple M5 Pro | NEON | 10,192,308 | median of 15 runs |
+| AMD Ryzen | AVX2 | 6,733,185 | single run |
+
+Both run the same algorithm and differ only in the kernels, but this is
+not a fair comparison of the two instruction sets.
+
+The M5 Pro sustains 5.27 FMAs and 5.75 128-bit loads per cycle, which is
+a very wide core, and this workload is limited by issue width rather than
+by stalls, so core width translates almost directly into throughput.
+
+The AVX2 path is also untuned. Every constant in the NEON path, meaning
+accumulator set counts, fused against unfused MLP, and tile sizes, was
+chosen by A/B measurement on ARM hardware. None of that has been repeated
+on x86. x86-64 also has 16 vector registers against ARM64's 32, so the
+register-hungry choices are the ones most likely to be wrong there. There
+is probably headroom in the AVX2 number.
+
+For a while this figure was quoted from a Rosetta 2 run at 2,225,024
+tok/sec. Native x86 turned out to be 3.0x that, because Rosetta
+translates 256-bit AVX2 into pairs of 128-bit NEON operations and
+discards the width the backend exists for. Emulation is fine for checking
+correctness and useless for benchmarking.
