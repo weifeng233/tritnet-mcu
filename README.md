@@ -41,25 +41,6 @@ sample 10: mailyn
   c fp32+NEON       10168430 tok/sec
 ```
 
-The demo samples at temperature 0.5, which sharpens the distribution. At
-1.0 it produces 93% distinct names, 74% of them not in the training data.
-
-## Layout
-
-```
-microgpt-c/
-├── Makefile
-├── data/
-│   └── names.txt        training corpus, one name per line
-├── docs/
-│   └── PERFORMANCE.md   how the inference path works, and what limits it
-└── src/
-    └── microgpt.c       model, training, inference
-```
-
-One source file is intentional. The whole thing should be readable in a
-single sitting.
-
 ## Notes
 
 The model has 4192 parameters and generalises rather than memorises.
