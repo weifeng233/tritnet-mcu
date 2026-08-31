@@ -64,3 +64,56 @@ what limits it.
 | --- | --- | --- |
 | Apple M5 Pro | NEON | 10,168,430 |
 | AMD Ryzen 5 5600H | AVX2 | 6,927,775 |
+
+## BitNet ternary QAT + packing, full pipeline in Zig
+
+`src/bitnet.zig` (built as `bitnet`) runs the entire lifecycle in one
+dependency-free binary: fp32 pretrain, BitNet quantization-aware training,
+held-out validation, and a ternary-packed model export.
+
+```bash
+zig build --release=fast bitnet            # or: ./zig-out/bin/bitnet data/names.txt [steps] [qat_steps]
+zig build test                             # ternary packing unit tests
+```
+
+Quantization follows BitNet b1.58: each weight matrix is ternarized with an
+absmean scale (`scale = mean(|W|)`, trit `+1/-1` beyond `scale/2`, else `0`)
+and trained with the straight-through estimator, the gradient masked to
+`|W| < scale` (mirroring `bitnet_gpt_train.py`), plus per-token 8-bit
+activation quantization during QAT. Embeddings stay fp32.
+
+Validation on data/names.txt (80/20 train/hold-out split, 20000 fp32 steps
+then 5000 QAT steps, ~1 s total on a Ryzen 5 5600H):
+
+```
+eval (avg nats/char, float activations)
+  fp32  train 2.1947   val 2.1990
+  ptq   val 2.4967   (ternary, no QAT)
+  qat   train 2.2728   val 2.2708
+summary
+  fp32 val 2.1990 | ptq val 2.4967 | qat val 2.2708 | qat recovery 75.9% of fp32->ptq gap
+```
+
+Naive post-training quantization costs +0.30 nats/char; QAT claws back
+three quarters of that while making every projection ternary.
+
+Storage uses [compilade's ternary packing](https://compilade.net/blog/ternary-packing)
+(the scheme llama.cpp uses for BitNet models): five trits per byte via base-3
+with a ceiling rescale, decoded division-free by peeling digits off the top
+with a multiply-and-shift. `src/ternary.zig` implements pack/unpack with
+exhaustive round-trip tests over all 243 blocks; the pipeline exports
+`modeldata/bitnet_gpt_packed.bin`, reloads it, and re-evaluates to prove the
+packed artifact is bit-exact:
+
+```
+storage
+  ternary weights      :   3504 params
+  fp32 weights         :  16768 bytes
+  naive 2-bit          :    876 bytes
+  packed 5-trits/byte  :    761 bytes  (22.0x smaller than fp32, 1.74 bits/trit incl. scales)
+  model file ...       :   3579 bytes (embeddings kept fp32)
+packed round-trip
+  val loss pre-export  : 2.270826
+  val loss reloaded    : 2.270826
+  round-trip: OK (lossless)
+```

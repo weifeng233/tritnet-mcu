@@ -43,4 +43,32 @@ pub fn build(b: *std.Build) void {
     });
     if (target.result.os.tag != .windows) c_mod.linkSystemLibrary("m", .{});
     b.installArtifact(c_exe);
+
+    const bitnet_mod = b.createModule(.{
+        .root_source_file = b.path("src/bitnet.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const bitnet_exe = b.addExecutable(.{
+        .name = "bitnet",
+        .root_module = bitnet_mod,
+    });
+    if (target.result.os.tag != .windows) bitnet_mod.linkSystemLibrary("m", .{});
+    b.installArtifact(bitnet_exe);
+
+    const bitnet_cmd = b.addRunArtifact(bitnet_exe);
+    if (b.args) |args| bitnet_cmd.addArgs(args) else bitnet_cmd.addArg("data/names.txt");
+    const bitnet_step = b.step("bitnet", "Full pipeline: fp32 pretrain -> BitNet ternary QAT -> packed export");
+    bitnet_step.dependOn(&bitnet_cmd.step);
+
+    const ternary_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/ternary.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const ternary_tests = b.addTest(.{ .root_module = ternary_test_mod });
+    const run_tests = b.addRunArtifact(ternary_tests);
+    const test_step = b.step("test", "Run ternary packing unit tests");
+    test_step.dependOn(&run_tests.step);
 }
