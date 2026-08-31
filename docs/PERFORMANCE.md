@@ -8,8 +8,8 @@ time per token goes.
 Training and inference use separate forward passes. `gpt_forward` stores
 ~1.3 KB of activations per token for backprop. `gpt_forward_infer` needs
 none of that and is built for one-token-at-a-time decoding. Its logits
-match the training forward to 1.4e-06 absolute on NEON and 2.4e-06 on
-AVX2, against logits of magnitude ~8, which is fp32 rounding noise.
+match the training forward to 2.4e-06 absolute on AVX2, against logits
+of magnitude ~8, which is fp32 rounding noise.
 
 There are two backends. Weight packing, the `(token, pos)` table and the
 sampler are shared; only the kernels and the forward body differ. NEON
@@ -42,7 +42,7 @@ What the inference path does differently:
 
 ## Where the time goes
 
-About half the time is the MLP, roughly 240 of 500 cycles per token.
+About half the time is the MLP.
 
 The limit is issue width rather than stalls. Extra independent FMAs
 added to the token loop cost 0.20 cycles each against a 0.19 theoretical
@@ -54,31 +54,19 @@ Single-threaded, on the benchmark's 5M token sampling loop:
 
 | machine | backend | tok/sec | |
 | --- | --- | --- | --- |
-| Apple M5 Pro | NEON | 10,168,430 | median of 15 runs |
-| AMD Ryzen 5 5600H | AVX2 | 6,927,775 | median of 5 runs |
+| AMD Ryzen 9 7940H | AVX2 | 5,491,565 | median of 5 runs |
 
 ## Compiler
 
-The Zig build (`zig build --release=fast`) is `ReleaseFast` (`-Ofast` semantics)
-and on this Windows x86-64 box matches the C build within run-to-run noise
-(~5.4-5.7M tok/sec for both `c fp32+AVX2` and `zig fp32+AVX2` on the 5M-token
-loop). The Makefile still defaults to `zig cc`, Zig's drop-in clang. On the same
-AMD Ryzen 9 7940H used for the AVX2 row above, zig's clang at `-Ofast`
-outpaces gcc at `-O3 -ffast-math` by roughly 9% (5.8M vs 5.3M tok/sec,
-best of several runs each), so the default build is a little faster than
-the gcc row in the table. `make CC=gcc` reproduces the gcc numbers.
-
-Both run the same algorithm and differ only in the kernels, so this is
-not a fair comparison of the two instruction sets. The M5 Pro sustains
-5.27 FMAs and 5.75 128-bit loads per cycle, which is a wide core, and on
-an issue-width-limited workload that translates almost directly into
-throughput.
-
-The AVX2 row is native x86. The same binary under Rosetta 2 on Apple
-Silicon measures 2,225,024 tok/sec, a third of native, because Rosetta
-translates 256-bit AVX2 into pairs of 128-bit NEON operations and
-discards the width the backend exists for. Emulation is usable for
-checking correctness and not for benchmarking.
+The Zig build (`zig build --release=fast`) is `ReleaseFast` (`-Ofast` semantics).
+On the AMD Ryzen 9 7940H the two zig-build binaries match within
+run-to-run noise: 5.49M (`zig fp32+AVX2`) against 5.39M (`c fp32+AVX2`)
+tok/sec, medians of 5 runs on the 5M-token loop. The Makefile still
+defaults to `zig cc`, Zig's drop-in clang; built through the Makefile the
+same C source measures 5.81M, while gcc at `-Ofast` measures 5.23M —
+zig's clang is roughly 11% faster (medians of 5 runs each). `make
+CC=gcc` reproduces the gcc numbers. Session-to-session drift on this box
+is a few percent, so compare numbers from the same measurement session.
 
 The AVX2 path is the less tuned of the two. Every constant in the NEON
 path was chosen by A/B measurement on ARM hardware and almost none of
@@ -101,7 +89,7 @@ Measured and abandoned, so they need not be tried again:
   `fdiv` and `fsqrt`, because the refinement is five instructions where
   the hardware is one.
 - More accumulator chains on AVX2. Raising Wo and lm_head from 4 chains
-  to 8 measured flat on a 5600H.
+  to 8 measured flat on this machine.
 - Breaking the token-to-token dependency, tested by replaying a recorded
   token trajectory so consecutive tokens were independent. No faster, so
   nothing is waiting on that dependency.
@@ -137,9 +125,9 @@ as the inference path, with 8-wide kernels on x86 and NEON:
   `pow(b1, step)` bias correction is computed once per step, and
   `char_to_id` is a 256-entry LUT.
 
-ReleaseFast on the 5600H, 20000 steps over `data/names.txt` (median of
-5 runs): 0.99-1.03 s before, 0.29 s after, about 3.4x, roughly 68K
-steps/sec. Final average loss 2.2194 vs 2.2199 scalar — the only
+ReleaseFast on the 7940H, 20000 steps over `data/names.txt` (median of
+5 runs): 0.30 s, roughly 67K steps/sec. Final average loss 2.2194 vs
+2.2199 scalar — the only
 numerical changes are reassociated sums (vector lane splits, FMA
 contraction in the new kernels), and samples remain name-like.
 Inference throughput is untouched, as none of its code paths changed.

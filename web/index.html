@@ -206,15 +206,14 @@
   </div>
 
   <div class="card">
-    <h3>参考：其他机器的历史数据（来自 docs/PERFORMANCE.md）</h3>
+    <h3>参考：不同构建方式的 tok/sec（来自 docs/PERFORMANCE.md）</h3>
     <table>
-      <tr><th>机器</th><th>后端</th><th>tok/sec</th><th>备注</th></tr>
-      <tr><td>Apple M5 Pro</td><td>NEON</td><td class="c">10,168,430</td><td>C 版，15 次运行中位数</td></tr>
-      <tr><td>AMD Ryzen 5 5600H</td><td>AVX2</td><td class="c">6,927,775</td><td>C 版，5 次运行中位数</td></tr>
-      <tr><td>AMD Ryzen 9 7940H（本机）</td><td>AVX2</td><td class="c">5.39M</td><td>2026-08-31 实测 · C</td></tr>
-      <tr><td>AMD Ryzen 9 7940H（本机）</td><td>AVX2</td><td class="z">5.57M</td><td>2026-08-31 实测 · Zig（训练向量化后）</td></tr>
+      <tr><th>构建</th><th>后端</th><th>tok/sec</th><th>备注</th></tr>
+      <tr><td>zig cc（Makefile 默认）</td><td class="c">AVX2</td><td class="c">5.81M</td><td>2026-08-31 实测 · C · 5 次运行中位数</td></tr>
+      <tr><td>gcc -Ofast</td><td class="c">AVX2</td><td class="c">5.23M</td><td>2026-08-31 实测 · C · 5 次运行中位数</td></tr>
+      <tr><td>zig build --release=fast</td><td class="z">AVX2</td><td class="z">5.49M</td><td>2026-08-31 实测 · Zig · 5 次运行中位数</td></tr>
     </table>
-    <p class="note" style="margin-top:8px; margin-bottom:0;">文档还记录：同一台 7940H 上 zig cc（clang）-Ofast 比 gcc -O3 -ffast-math 快约 9%；Rosetta 2 下 AVX2 版掉到 2.23M，仅为原生 1/3。</p>
+    <p class="note" style="margin-top:8px; margin-bottom:0;">同一台 7940H 上，zig cc（clang）-Ofast 比 gcc -Ofast 快约 11%。会话间存在几个百分点的漂移，跨会话数字请在同一测量会话内对比。</p>
   </div>
 </div></section>
 

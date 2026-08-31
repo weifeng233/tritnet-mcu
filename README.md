@@ -65,7 +65,7 @@ make cnn-c                          # C deployment check on the packed 1D-CNN ar
    to prove the packed artifact is lossless.
 
 Measured on data/names.txt (80/20 train/hold-out split, 20000 fp32 steps
-then 5000 QAT steps, ~1 s total on a Ryzen 5 5600H):
+then 5000 QAT steps, ~1 s total on a Ryzen 9 7940H):
 
 ```
 eval (avg nats/char, float activations)
@@ -168,8 +168,7 @@ what limits it.
 
 | machine | backend | tok/sec |
 | --- | --- | --- |
-| Apple M5 Pro | NEON | 10,168,430 |
-| AMD Ryzen 5 5600H | AVX2 | 6,927,775 |
+| AMD Ryzen 9 7940H | AVX2 | 5,491,565 |
 
 ## Legacy PyTorch path
 
