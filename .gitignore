@@ -1,8 +1,13 @@
 # build output
 microgpt
 microgpt-c
+tritnet-fp32
+tritnetmcu
 zig-out/
 .zig-cache/
 *.o
 *.dSYM/
 *.pdb
+*.exe
+__pycache__/
+.commandcode/

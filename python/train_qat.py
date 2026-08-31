@@ -1,5 +1,5 @@
 """
-BitNet-GPT Training Script
+TritNet-MCU QAT Training Script (legacy PyTorch path)
 ===========================
 PyTorch QAT (Quantization-Aware Training) for a ternary-weight char-level GPT.
 Architecture mirrors microgpt-c: 1-layer transformer, 4 heads, 16-dim embeddings,
@@ -436,7 +436,7 @@ def train(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='BitNet-GPT Ternary QAT Training')
-    parser.add_argument('--data', type=str, default='names.txt',
+    parser.add_argument('--data', type=str, default='data/names.txt',
                         help='Training data file (one name per line)')
     parser.add_argument('--output', type=str, default='modeldata/bitnet_gpt.pth',
                         help='Output checkpoint path')

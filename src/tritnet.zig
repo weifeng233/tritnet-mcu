@@ -1,4 +1,7 @@
-//! Full-pipeline BitNet GPT in pure Zig.
+//! TritNet-MCU: full ternary pipeline in pure Zig.
+//!
+//! Project home: the tritnetmcu build artifact. The network itself is the
+//! tiny char-level GPT (microGPT) carried over from the fp32 baseline.
 //!
 //! Pipeline (single binary, no dependencies beyond libc):
 //!   1. fp32 pretrain        -- identical math to src/microgpt.zig
@@ -1760,7 +1763,7 @@ pub fn main(init: std.process.Init) u8 {
     infer_pack_weights(true);
     sample_names(10, 0.5);
 
-    const path: []const u8 = "modeldata/bitnet_gpt_packed.bin";
+    const path: []const u8 = "modeldata/tritnetmcu_packed.bin";
     export_packed_model(init.io, path) catch {
         std.debug.print("failed to write {s}\n", .{path});
         return 1;

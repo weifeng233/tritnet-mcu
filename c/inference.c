@@ -22,8 +22,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "bitnet_gpt_model.h"
-#include "bitnet_gpt_inference.h"
+#include "model.h"
+#include "inference.h"
 
 /* ====================================================================
  * RNG (minimal xorshift, same as microgpt-c)

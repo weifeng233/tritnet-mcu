@@ -4,33 +4,34 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize: std.builtin.OptimizeMode = if (b.release_mode != .off) .ReleaseFast else .Debug;
 
-    const mod = b.createModule(.{
-        .root_source_file = b.path("src/microgpt.zig"),
+    // fp32 baseline trainer/inference (the original microGPT, in Zig)
+    const fp32_mod = b.createModule(.{
+        .root_source_file = b.path("src/fp32.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-
-    const exe = b.addExecutable(.{
-        .name = "microgpt",
-        .root_module = mod,
+    const fp32_exe = b.addExecutable(.{
+        .name = "tritnet-fp32",
+        .root_module = fp32_mod,
     });
     if (target.result.os.tag != .windows) {
-        mod.linkSystemLibrary("m", .{});
+        fp32_mod.linkSystemLibrary("m", .{});
     }
-    b.installArtifact(exe);
+    b.installArtifact(fp32_exe);
 
-    const run_cmd = b.addRunArtifact(exe);
+    const run_cmd = b.addRunArtifact(fp32_exe);
     if (b.args) |args| run_cmd.addArgs(args) else run_cmd.addArg("data/names.txt");
-    const run_step = b.step("run", "Run microgpt");
+    const run_step = b.step("run", "Run the fp32 baseline trainer");
     run_step.dependOn(&run_cmd.step);
 
+    // C reference implementation, kept for A/B comparison
     const c_mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    c_mod.addCSourceFile(.{ .file = b.path("src/microgpt.c"), .flags = &[_][]const u8{
+    c_mod.addCSourceFile(.{ .file = b.path("c/microgpt.c"), .flags = &[_][]const u8{
         "-Ofast",
         "-march=native",
         "-mavx2",
@@ -44,23 +45,24 @@ pub fn build(b: *std.Build) void {
     if (target.result.os.tag != .windows) c_mod.linkSystemLibrary("m", .{});
     b.installArtifact(c_exe);
 
-    const bitnet_mod = b.createModule(.{
-        .root_source_file = b.path("src/bitnet.zig"),
+    // full pipeline: fp32 pretrain -> ternary QAT -> ternary-packed export
+    const tritnet_mod = b.createModule(.{
+        .root_source_file = b.path("src/tritnet.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    const bitnet_exe = b.addExecutable(.{
-        .name = "bitnet",
-        .root_module = bitnet_mod,
+    const tritnet_exe = b.addExecutable(.{
+        .name = "tritnetmcu",
+        .root_module = tritnet_mod,
     });
-    if (target.result.os.tag != .windows) bitnet_mod.linkSystemLibrary("m", .{});
-    b.installArtifact(bitnet_exe);
+    if (target.result.os.tag != .windows) tritnet_mod.linkSystemLibrary("m", .{});
+    b.installArtifact(tritnet_exe);
 
-    const bitnet_cmd = b.addRunArtifact(bitnet_exe);
-    if (b.args) |args| bitnet_cmd.addArgs(args) else bitnet_cmd.addArg("data/names.txt");
-    const bitnet_step = b.step("bitnet", "Full pipeline: fp32 pretrain -> BitNet ternary QAT -> packed export");
-    bitnet_step.dependOn(&bitnet_cmd.step);
+    const tritnet_cmd = b.addRunArtifact(tritnet_exe);
+    if (b.args) |args| tritnet_cmd.addArgs(args) else tritnet_cmd.addArg("data/names.txt");
+    const tritnet_step = b.step("tritnet", "Full pipeline: fp32 pretrain -> ternary QAT -> packed export");
+    tritnet_step.dependOn(&tritnet_cmd.step);
 
     const ternary_test_mod = b.createModule(.{
         .root_source_file = b.path("src/ternary.zig"),

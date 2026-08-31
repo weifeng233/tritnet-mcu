@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>microGPT：C 语言版 vs Zig 语言版</title>
+<title>TritNet-MCU：C 语言版 vs Zig 语言版</title>
 <style>
   :root{
     --bg:#0c1017; --panel:#131a26; --panel2:#0f1520; --line:#22304a;
@@ -293,7 +293,7 @@
   <div class="card" style="margin-top:20px;">
     <h3>特性对照表</h3>
     <table class="feat">
-      <tr><th>维度</th><th>C 版（src/microgpt.c）</th><th>Zig 版（src/microgpt.zig）</th></tr>
+      <tr><th>维度</th><th>C 版（c/microgpt.c）</th><th>Zig 版（src/fp32.zig）</th></tr>
       <tr><td>架构分发</td><td><code>#if defined(__x86_64__)</code> 编译期复制双内核</td><td><code>builtin.cpu.arch</code> 探测 + <code>@Vector</code> 单内核跨架构</td></tr>
       <tr><td>SIMD 写法</td><td>x86 intrinsics + ARM NEON intrinsics 各写一遍</td><td>Vec4/Vec8 向量类型，<code>@mulAdd</code>、<code>@reduce</code></td></tr>
       <tr><td>内存管理</td><td><code>calloc</code> / 手动 <code>free</code>（结尾 60+ 行释放）</td><td><code>gpa.alloc</code> 切片（带长度），同样手动 <code>gpa.free</code>，ReleaseFast 下越界不 panic</td></tr>
@@ -318,7 +318,7 @@
   </div>
   <div class="panes">
     <div class="pane on" id="p1">
-      <div class="code"><div class="cap c">C<span class="file">microgpt.c · dot16（AVX2 版；NEON 还要再写一份）</span></div>
+      <div class="code"><div class="cap c">C<span class="file">c/microgpt.c · dot16（AVX2 版；NEON 还要再写一份）</span></div>
 <pre data-lang="c">static __attribute__((always_inline)) inline float dot16(const float *a, const float *b) {
   __m256 r = _mm256_fmadd_ps(_mm256_loadu_ps(a),   _mm256_loadu_ps(b),
              _mm256_mul_ps (_mm256_loadu_ps(a+8),  _mm256_loadu_ps(b+8)));
@@ -326,7 +326,7 @@
   lo = _mm_add_ps(lo, hi); lo = _mm_hadd_ps(lo, lo); lo = _mm_hadd_ps(lo, lo);
   return _mm_cvtss_f32(lo);
 }</pre></div>
-      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · dot16（一份源码，x86/ARM 通吃）</span></div>
+      <div class="code"><div class="cap z">Zig<span class="file">fp32.zig · dot16（一份源码，x86/ARM 通吃）</span></div>
 <pre data-lang="zig">inline fn dot16(a: *const [16]f32, b: *const [16]f32) f32 {
     const va0: Vec8 = a[0..8].*;
     const vb0: Vec8 = b[0..8].*;
@@ -340,7 +340,7 @@
     </div>
 
     <div class="pane" id="p2">
-      <div class="code"><div class="cap c">C<span class="file">microgpt.c · 文件头</span></div>
+      <div class="code"><div class="cap c">C<span class="file">c/microgpt.c · 文件头</span></div>
 <pre data-lang="c">#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
   #define MG_SIMD_AVX2 1
   #define MG_SIMD_NAME "AVX2"
@@ -350,7 +350,7 @@
 #else
   #error "microGPT-C requires x86-64 (AVX2) or AArch64 (NEON)"
 #endif</pre></div>
-      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · 文件头</span></div>
+      <div class="code"><div class="cap z">Zig<span class="file">fp32.zig · 文件头</span></div>
 <pre data-lang="zig">const builtin = @import("builtin");
 
 const is_x86 = builtin.cpu.arch == .x86_64;
@@ -359,13 +359,13 @@ const is_aarch64 = builtin.cpu.arch == .aarch64;</pre></div>
     </div>
 
     <div class="pane" id="p3">
-      <div class="code"><div class="cap c">C<span class="file">microgpt.c · 位技巧版 exp（跳过指数单元，精度换速度）</span></div>
+      <div class="code"><div class="cap c">C<span class="file">c/microgpt.c · 位技巧版 exp（跳过指数单元，精度换速度）</span></div>
 <pre data-lang="c">static __attribute__((always_inline)) inline float fexpf(float x) {
   union { float f; int i; } u;
   u.i = (int)(12102203.1615614f * x * 1.4426950408f) + 1065353216;
   return u.f;
 }</pre></div>
-      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · 同一算法</span></div>
+      <div class="code"><div class="cap z">Zig<span class="file">fp32.zig · 同一算法</span></div>
 <pre data-lang="zig">inline fn fexpf(x: f32) f32 {
     const bits: i32 = @as(i32, @intFromFloat(12102203.1615614 * x * 1.4426950408))
                    + 1065353216;
@@ -375,7 +375,7 @@ const is_aarch64 = builtin.cpu.arch == .aarch64;</pre></div>
     </div>
 
     <div class="pane" id="p4">
-      <div class="code"><div class="cap c">C<span class="file">microgpt.c · 分配与释放</span></div>
+      <div class="code"><div class="cap c">C<span class="file">c/microgpt.c · 分配与释放</span></div>
 <pre data-lang="c">static float *make_zero(int size) {
   return (float *)calloc(size, sizeof(float));
 }
@@ -385,7 +385,7 @@ free(d_wte);
 free(adam_m_wte);
 free(adam_v_wte);
 /* ……共 60+ 行逐指针 free */</pre></div>
-      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · 分配与释放</span></div>
+      <div class="code"><div class="cap z">Zig<span class="file">fp32.zig · 分配与释放</span></div>
 <pre data-lang="zig">fn make_zero(size: usize) []f32 {
     const p = gpa.alloc(f32, size) catch {
         std.debug.print("out of memory\n", .{});
@@ -401,13 +401,13 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
     </div>
 
     <div class="pane" id="p5">
-      <div class="code"><div class="cap c">C<span class="file">microgpt.c · pack_t 转置打包</span></div>
+      <div class="code"><div class="cap c">C<span class="file">c/microgpt.c · pack_t 转置打包</span></div>
 <pre data-lang="c">static void pack_t(const float *src, float *dst, int nout, int nin) {
   for (int r = 0; r &lt; nout; r++)
     for (int c = 0; c &lt; nin; c++)
       dst[(size_t)c * nout + r] = src[(size_t)r * nin + c];
 }</pre></div>
-      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · pack_t 转置打包</span></div>
+      <div class="code"><div class="cap z">Zig<span class="file">fp32.zig · pack_t 转置打包</span></div>
 <pre data-lang="zig">fn pack_t(src: []const f32, dst: []f32, nout: usize, nin: usize) void {
     for (0..nout) |r| {
         for (0..nin) |c_idx| {
@@ -425,13 +425,14 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
   <div class="grid2">
     <div class="card">
       <h3 style="color:var(--z-orange)">一条命令出两个二进制</h3>
-      <div class="cmd"><span class="p">$</span> zig build --release=fast<br><span class="p">→</span> zig-out/bin/microgpt.exe     <span class="p"># Zig 版</span><br><span class="p">→</span> zig-out/bin/microgpt-c.exe  <span class="p"># C 版（A/B 对照）</span></div>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast<br><span class="p">→</span> zig-out/bin/tritnet-fp32.exe     <span class="p"># Zig 版</span><br><span class="p">→</span> zig-out/bin/microgpt-c.exe  <span class="p"># C 版（A/B 对照）</span></div>
       <div class="cmd"><span class="p">$</span> zig build --release=fast run   <span class="p"># 直接跑</span><br><span class="p">$</span> make CC=gcc run                <span class="p"># 老工具链对照</span></div>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast tritnet <span class="p"># fp32 预训练 → 三值 QAT → 打包导出 全链路</span></div>
       <p class="note" style="margin-bottom:0;">build.zig 里 C 版用 <code>addCSourceFile</code> 编入，flags 为 -Ofast -march=native -mavx2 -mfma —— 两个二进制由同一套 Zig/LLVM 工具链编译，最大化可比性。</p>
     </div>
     <div class="card">
       <h3>仓库定位</h3>
-      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">项目现在是纯 Zig 主导（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">src/microgpt.zig</code> 为主 artifact），C 源码（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">src/microgpt.c</code>）保留作为参考实现并随每次构建自动编译，用于 A/B 对比——本页正是这个对照机制的可视化快照。</p>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">项目现在是纯 Zig 主导（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">src/fp32.zig</code> 为主 artifact），C 源码（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">c/microgpt.c</code>）保留作为参考实现并随每次构建自动编译，用于 A/B 对比——本页正是这个对照机制的可视化快照。</p>
       <p style="font-size:13.5px; color:var(--muted); margin-top:12px;">两个版本都：单文件、除 libc 外零依赖、同一算法（前向/反向/Adam/采样/权重打包/预计算 (token,pos) 表/融合采样器）。</p>
     </div>
   </div>
@@ -454,7 +455,7 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
 </div></section>
 
 <footer><div class="wrap">
-  数据于 2026-08-31 在 AMD Ryzen 9 7940H 上由 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/microgpt.exe</code> 与 <code style="font-family:ui-monospace,Consolas,monospace;">microgpt-c.exe</code> 实测采集（Zig 为训练内核向量化后重测） · microGPT-C 项目可视化对比页
+  数据于 2026-08-31 在 AMD Ryzen 9 7940H 上由 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/tritnet-fp32.exe</code> 与 <code style="font-family:ui-monospace,Consolas,monospace;">microgpt-c.exe</code> 实测采集（Zig 为训练内核向量化后重测） · TritNet-MCU 项目可视化对比页
 </div></footer>
 
 <script>

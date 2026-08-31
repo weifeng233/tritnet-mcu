@@ -335,10 +335,10 @@ def generate_c_header(checkpoint_path, output_path):
 # ============================================================================
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Export BitNet-GPT to C header')
+    parser = argparse.ArgumentParser(description='Export the QAT checkpoint to the C model header (c/model.h)')
     parser.add_argument('--checkpoint', type=str, default='modeldata/bitnet_gpt.pth',
                         help='Path to model checkpoint')
-    parser.add_argument('--output', type=str, default='bitnet_gpt_model.h',
+    parser.add_argument('--output', type=str, default='c/model.h',
                         help='Output C header file')
     args = parser.parse_args()
 

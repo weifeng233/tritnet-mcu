@@ -32,8 +32,8 @@ endif
 # implied by -Ofast, so it is not repeated.
 CFLAGS  ?= -Ofast $(ARCHFLAGS) -Wall
 LDLIBS  := -lm
-BIN     := microgpt
-SRC     := src/microgpt.c
+BIN     := microgpt-c
+SRC     := c/microgpt.c
 DATA    := data/names.txt
 
 all: $(BIN)
