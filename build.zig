@@ -64,6 +64,24 @@ pub fn build(b: *std.Build) void {
     const tritnet_step = b.step("tritnet", "Full pipeline: fp32 pretrain -> ternary QAT -> packed export");
     tritnet_step.dependOn(&tritnet_cmd.step);
 
+    // TinyML 1D-CNN: fp32 pretrain -> ternary QAT -> packed export + verification
+    const cnn_mod = b.createModule(.{
+        .root_source_file = b.path("src/cnn1d.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const cnn_exe = b.addExecutable(.{
+        .name = "tritnet-cnn",
+        .root_module = cnn_mod,
+    });
+    if (target.result.os.tag != .windows) cnn_mod.linkSystemLibrary("m", .{});
+    b.installArtifact(cnn_exe);
+
+    const cnn_cmd = b.addRunArtifact(cnn_exe);
+    const cnn_step = b.step("cnn", "TinyML 1D-CNN: fp32 pretrain -> ternary QAT -> packed export");
+    cnn_step.dependOn(&cnn_cmd.step);
+
     const ternary_test_mod = b.createModule(.{
         .root_source_file = b.path("src/ternary.zig"),
         .target = target,
@@ -71,6 +89,16 @@ pub fn build(b: *std.Build) void {
     });
     const ternary_tests = b.addTest(.{ .root_module = ternary_test_mod });
     const run_tests = b.addRunArtifact(ternary_tests);
-    const test_step = b.step("test", "Run ternary packing unit tests");
+
+    const cnn_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/cnn1d.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const cnn_tests = b.addTest(.{ .root_module = cnn_test_mod });
+    const run_cnn_tests = b.addRunArtifact(cnn_tests);
+
+    const test_step = b.step("test", "Run ternary packing + 1D-CNN unit tests");
     test_step.dependOn(&run_tests.step);
+    test_step.dependOn(&run_cnn_tests.step);
 }

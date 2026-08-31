@@ -3,6 +3,7 @@ microgpt
 microgpt-c
 tritnet-fp32
 tritnetmcu
+cnn1d-c
 zig-out/
 .zig-cache/
 *.o

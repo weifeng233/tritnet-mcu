@@ -36,6 +36,13 @@ BIN     := microgpt-c
 SRC     := c/microgpt.c
 DATA    := data/names.txt
 
+# TinyML 1D-CNN deployment engine: consumes the artifacts written by
+# `zig build --release=fast cnn` and verifies accuracy/latency parity.
+CNN_BIN  := cnn1d-c
+CNN_SRC  := c/cnn1d_inference.c
+CNN_MODEL := modeldata/cnn1d_packed.bin
+CNN_VALSET := modeldata/cnn1d_valset.bin
+
 all: $(BIN)
 
 $(BIN): $(SRC)
@@ -44,7 +51,13 @@ $(BIN): $(SRC)
 run: $(BIN)
 	./$(BIN) $(DATA)
 
-clean:
-	rm -rf $(BIN) zig-out .zig-cache *.o *.dSYM
+$(CNN_BIN): $(CNN_SRC)
+	$(ZCC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
-.PHONY: all run clean
+cnn-c: $(CNN_BIN)
+	./$(CNN_BIN) $(CNN_MODEL) $(CNN_VALSET)
+
+clean:
+	rm -rf $(BIN) $(CNN_BIN) zig-out .zig-cache *.o *.dSYM
+
+.PHONY: all run cnn-c clean
