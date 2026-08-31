@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>microGPT：C 语言版 vs Zig 语言版</title>
+<style>
+  :root{
+    --bg:#0c1017; --panel:#131a26; --panel2:#0f1520; --line:#22304a;
+    --text:#d7e0ef; --muted:#8b98ad; --dim:#5b6a82;
+    --c-blue:#4fa3ff; --c-blue-dim:#1d3a5f;
+    --z-orange:#f7a41d; --z-orange-dim:#5a4113;
+    --good:#3ddc97; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--bg); color:var(--text); font-family:"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif; line-height:1.6;}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px;}
+  nav{position:sticky; top:0; z-index:50; background:rgba(12,16,23,.88); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+  nav .wrap{display:flex; align-items:center; gap:18px; height:52px;}
+  nav .logo{font-weight:700; font-size:15px; white-space:nowrap;}
+  nav .logo b.c{color:var(--c-blue);} nav .logo b.z{color:var(--z-orange);}
+  nav a{color:var(--muted); text-decoration:none; font-size:13px; white-space:nowrap;}
+  nav a:hover{color:var(--text);}
+
+  header.hero{padding:64px 0 40px; text-align:center;}
+  header.hero h1{font-size:36px; font-weight:800; letter-spacing:.5px;}
+  header.hero h1 .c{color:var(--c-blue);} header.hero h1 .z{color:var(--z-orange);}
+  header.hero p.sub{color:var(--muted); margin-top:12px; font-size:15px;}
+  .hero-nums{display:flex; justify-content:center; gap:14px; margin-top:32px; flex-wrap:wrap;}
+  .hnum{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 26px; min-width:150px;}
+  .hnum .v{font-size:26px; font-weight:800;}
+  .hnum .l{font-size:12px; color:var(--muted); margin-top:2px;}
+  .hnum .v .c{color:var(--c-blue);} .hnum .v .z{color:var(--z-orange);}
+
+  section{padding:44px 0 8px;}
+  h2{font-size:24px; margin-bottom:6px;}
+  h2 .tag{font-size:12px; font-weight:600; color:var(--dim); margin-left:10px; letter-spacing:1px;}
+  .lead{color:var(--muted); font-size:14.5px; margin-bottom:24px; max-width:860px;}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  @media (max-width:860px){ .grid2{grid-template-columns:1fr;} }
+  .card h3{font-size:16px; margin-bottom:4px;}
+  .card .note{font-size:12.5px; color:var(--dim); margin-bottom:14px;}
+
+  /* horizontal bars */
+  .bars .row{display:grid; grid-template-columns:52px 1fr 118px; align-items:center; gap:12px; margin:10px 0;}
+  .bars .lab{font-size:13px; font-weight:700; text-align:right;}
+  .bars .lab.c{color:var(--c-blue);} .bars .lab.z{color:var(--z-orange);}
+  .bars .track{background:var(--panel2); border-radius:6px; height:26px; position:relative; overflow:hidden;}
+  .bars .fill{height:100%; border-radius:6px; transition:width 1s cubic-bezier(.2,.8,.2,1);}
+  .bars .fill.c{background:linear-gradient(90deg,#1d4f80,var(--c-blue));}
+  .bars .fill.z{background:linear-gradient(90deg,#8a5a10,var(--z-orange));}
+  .bars .val{font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums;}
+
+  /* stacked phase bar */
+  .stack{display:flex; height:34px; border-radius:8px; overflow:hidden; margin:8px 0 4px;}
+  .stack div{display:flex; align-items:center; justify-content:center; font-size:12px; color:#0c1017; font-weight:700; white-space:nowrap;}
+  .seg-train.c{background:#2f6ea8;} .seg-bench.c{background:var(--c-blue);}
+  .seg-train.z{background:#b57c1d;} .seg-bench.z{background:var(--z-orange);}
+  .stacklab{font-size:13px; color:var(--muted); margin-bottom:14px;}
+  .stacklab b{color:var(--text);}
+
+  /* runs table */
+  table{border-collapse:collapse; width:100%; font-size:13.5px;}
+  th,td{padding:8px 12px; text-align:right; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums;}
+  th:first-child,td:first-child{text-align:left;}
+  th{color:var(--muted); font-weight:600; font-size:12.5px;}
+  td.c{color:var(--c-blue);} td.z{color:var(--z-orange);}
+  tr:last-child td{border-bottom:none;}
+
+  /* loss chart */
+  .chartbox{position:relative;}
+  #lossChart{width:100%; height:auto; display:block;}
+  .legend{display:flex; gap:18px; font-size:13px; color:var(--muted); margin-bottom:8px;}
+  .legend i{display:inline-block; width:14px; height:3px; border-radius:2px; margin-right:6px; vertical-align:middle;}
+  .toggle{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-left:auto;}
+  .toggle button{background:var(--panel2); color:var(--muted); border:none; padding:4px 14px; font-size:12.5px; cursor:pointer;}
+  .toggle button.on{background:var(--line); color:var(--text);}
+  #tip{position:absolute; pointer-events:none; background:#1a2438; border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:12.5px; color:var(--text); display:none; z-index:5; white-space:nowrap; box-shadow:0 6px 24px rgba(0,0,0,.4);}
+  #tip .c{color:var(--c-blue);} #tip .z{color:var(--z-orange);}
+
+  /* samples */
+  .samples{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  @media (max-width:760px){ .samples{grid-template-columns:1fr;} }
+  .chipbox h4{font-size:14px; margin-bottom:10px;}
+  .chipbox h4.c{color:var(--c-blue);} .chipbox h4.z{color:var(--z-orange);}
+  .chips{display:flex; flex-wrap:wrap; gap:8px;}
+  .chip{background:var(--panel2); border:1px solid var(--line); padding:4px 12px; border-radius:99px; font-size:13.5px; font-family:ui-monospace,Consolas,monospace;}
+  .chip.c{border-color:var(--c-blue-dim);} .chip.z{border-color:var(--z-orange-dim);}
+
+  /* metric mini-bars */
+  .metrics{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:16px;}
+  .metric{background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:16px;}
+  .metric .t{font-size:12.5px; color:var(--muted); margin-bottom:8px;}
+  .metric .pair{display:grid; grid-template-columns:34px 1fr 64px; gap:8px; align-items:center; margin:5px 0;}
+  .metric .who{font-size:11.5px; font-weight:700;}
+  .metric .who.c{color:var(--c-blue);} .metric .who.z{color:var(--z-orange);}
+  .metric .mini{height:10px; background:#0a0e15; border-radius:5px; overflow:hidden;}
+  .metric .mini i{display:block; height:100%; border-radius:5px;}
+  .metric .mini i.c{background:var(--c-blue);} .metric .mini i.z{background:var(--z-orange);}
+  .metric .n{font-size:12px; color:var(--muted); text-align:right; font-variant-numeric:tabular-nums;}
+  .metric .cap{font-size:11.5px; color:var(--dim); margin-top:8px;}
+
+  /* feature table */
+  .feat th:first-child{width:22%;}
+  .feat td{vertical-align:top; font-size:13px; color:var(--muted);}
+  .feat td:first-child{color:var(--text); font-weight:600;}
+  .feat code{background:#0a0e15; padding:1px 6px; border-radius:4px; font-size:12px; color:#b8c7de;}
+
+  /* code compare */
+  .tabs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;}
+  .tabs button{background:var(--panel2); border:1px solid var(--line); color:var(--muted); padding:7px 16px; border-radius:9px; font-size:13px; cursor:pointer;}
+  .tabs button.on{background:var(--line); color:var(--text); border-color:#3b517a;}
+  .panes{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:900px){ .panes{grid-template-columns:1fr;} }
+  .pane{display:none;} .pane.on{display:contents;}
+  .code{border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--panel2); min-width:0;}
+  .code .cap{display:flex; align-items:center; gap:8px; padding:9px 14px; font-size:12.5px; font-weight:700; border-bottom:1px solid var(--line);}
+  .code .cap.c{color:var(--c-blue);} .code .cap.z{color:var(--z-orange);}
+  .code .cap .file{color:var(--dim); font-weight:400; font-family:ui-monospace,Consolas,monospace; font-size:11.5px; margin-left:auto;}
+  .code pre{padding:14px 16px; overflow-x:auto; font-family:ui-monospace,"Cascadia Code",Consolas,monospace; font-size:12.2px; line-height:1.55; color:#c9d5e8;}
+  .k{color:#c792ea;} .t2{color:#82aaff;} .num{color:#f78c6c;} .str{color:#8bd45e;} .pp{color:#546e7a;} .at{color:#ffcb6b;} .bi{color:#7fdbca;} .fn{color:#ffcb6b;}
+  .codenote{grid-column:1/-1; font-size:12.5px; color:var(--dim); padding:2px 4px 6px;}
+
+  /* build */
+  .cmd{background:#0a0e15; border:1px solid var(--line); border-radius:10px; padding:14px 18px; font-family:ui-monospace,Consolas,monospace; font-size:13px; color:#9fe8b8; margin:10px 0; overflow-x:auto;}
+  .cmd .p{color:var(--dim);}
+
+  .callout{border-left:3px solid var(--z-orange); background:rgba(247,164,29,.07); border-radius:0 10px 10px 0; padding:14px 18px; font-size:13.5px; color:var(--muted); margin:14px 0;}
+  .callout b{color:var(--text);}
+  .callout.blue{border-color:var(--c-blue); background:rgba(79,163,255,.07);}
+
+  footer{margin-top:56px; border-top:1px solid var(--line); padding:26px 0 40px; color:var(--dim); font-size:12.5px; text-align:center;}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <span class="logo"><b class="c">microGPT-C</b> ⇄ <b class="z">Zig</b></span>
+  <a href="#perf">性能</a><a href="#train">训练曲线</a><a href="#samples">生成样例</a><a href="#code">代码结构</a><a href="#side">源码对比</a><a href="#build">构建</a><a href="#verdict">结论</a>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <h1>同一颗 GPT 的两副躯体：<span class="c">C</span> 与 <span class="z">Zig</span></h1>
+  <p class="sub">4,192 参数的字符级 Transformer · 零依赖 · 单文件训练 + 推理 · 本页全部数据为 2026-08-31 本机实测（Zig 训练内核向量化优化后重测）</p>
+  <div class="hero-nums">
+    <div class="hnum"><div class="v"><span class="c">5.39M</span> / <span class="z">5.57M</span></div><div class="l">tok/sec 推理吞吐（中位数）</div></div>
+    <div class="hnum"><div class="v"><span class="c">1.63s</span> / <span class="z">1.22s</span></div><div class="l">全流程耗时（训练+采样+基准）</div></div>
+    <div class="hnum"><div class="v"><span class="c">1492</span> / <span class="z">1399</span></div><div class="l">源码行数</div></div>
+  </div>
+  <p class="sub" style="margin-top:18px; font-size:12.5px;">测试机：AMD Ryzen 9 7940H（AVX2）· 两个二进制均由 <code style="font-size:11px;">zig build --release=fast</code> 构建 · 语料 data/names.txt（32,033 个名字）</p>
+</div></header>
+
+<section id="perf"><div class="wrap">
+  <h2>实测性能 <span class="tag">MEASURED</span></h2>
+  <p class="lead">两个版本跑完全相同的 5,000,000 次单 token 采样基准循环。Zig 训练内核向量化之后，上一版的"快慢交叉"已被抹平：<b style="color:var(--text)">推理与全流程 Zig 双双领先</b>。</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>推理吞吐（5M token 基准循环）</h3>
+      <div class="note">每次运行 5,000,000 token，单线程，取 3 次运行</div>
+      <div class="bars">
+        <div class="row"><span class="lab c">C</span><div class="track"><div class="fill c" data-w="96.7"></div></div><span class="val">5.39M tok/s</span></div>
+        <div class="row"><span class="lab z">Zig</span><div class="track"><div class="fill z" data-w="100"></div></div><span class="val">5.57M tok/s</span></div>
+      </div>
+      <table style="margin-top:12px;">
+        <tr><th>运行</th><th>C (AVX2)</th><th>Zig (AVX2)</th></tr>
+        <tr><td>第 1 次</td><td class="c">5,389,414</td><td class="z">5,563,146</td></tr>
+        <tr><td>第 2 次</td><td class="c">5,387,893</td><td class="z">5,572,265</td></tr>
+        <tr><td>第 3 次</td><td class="c">5,556,851</td><td class="z">5,591,676</td></tr>
+        <tr><td>中位数</td><td class="c">5,389,414</td><td class="z">5,572,265 <b style="color:var(--good);">+3.4%</b></td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>全流程墙上时间</h3>
+      <div class="note">进程启动 → 20,000 步训练 → 10 个名字采样 → 5M token 基准 → 退出</div>
+      <div class="bars">
+        <div class="row"><span class="lab c">C</span><div class="track"><div class="fill c" data-w="100"></div></div><span class="val">1.63 s（最快 1.61）</span></div>
+        <div class="row"><span class="lab z">Zig</span><div class="track"><div class="fill z" data-w="74.8"></div></div><span class="val">1.22 s（最快 1.22）</span></div>
+      </div>
+      <table style="margin-top:12px;">
+        <tr><th>运行</th><th>C 总耗时</th><th>Zig 总耗时</th></tr>
+        <tr><td>4 次采样</td><td class="c">1.61 – 1.75 s</td><td class="z">1.22 – 1.31 s</td></tr>
+        <tr><td>中位数</td><td class="c">1.63 s</td><td class="z">1.22 s <b style="color:var(--good);">−25%</b></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>时间去向拆解（按中位数估算）</h3>
+    <div class="note">推理基准段 = 5,000,000 ÷ tok/sec；其余为进程启动 + 20,000 步训练 + 样例生成的总和</div>
+    <div class="stacklab"><b class="c" style="color:var(--c-blue)">C</b>：训练等 ≈ 0.70 s ＋ 基准循环 ≈ 0.93 s ＝ 1.63 s</div>
+    <div class="stack">
+      <div class="seg-train c" style="width:43%">0.70s</div>
+      <div class="seg-bench c" style="width:57%">0.93s</div>
+    </div>
+    <div class="stacklab" style="margin-top:14px;"><b style="color:var(--z-orange)">Zig</b>：训练等 ≈ 0.32 s ＋ 基准循环 ≈ 0.90 s ＝ 1.22 s</div>
+    <div class="stack">
+      <div class="seg-train z" style="width:26.2%">0.32s</div>
+      <div class="seg-bench z" style="width:73.8%">0.90s</div>
+    </div>
+    <div class="callout"><b>Zig 这次为什么全面领先？</b>上一版测得的"快慢交叉"已被训练向量化抹平：反传内核 <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">linear_bwd_x</code> / <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">linear_bwd_w</code> / <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">rmsnorm_bwd</code> 从朴素标量循环改写为 8-lane <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">@mulAdd</code> FMA，嵌入相加与梯度范数（sumsq）同步向量化，Adam 的偏置校正项移出内循环——训练段从 ~1.06 s 压到 ~0.32 s（3 倍+），而推理内核本来就更快，于是两项全胜。C 版反传仍是标量循环，训练段 ~0.70 s 维持原样。<b>算法与模型完全相同，差别全部来自内核工程。</b></div>
+  </div>
+
+  <div class="card">
+    <h3>参考：其他机器的历史数据（来自 docs/PERFORMANCE.md）</h3>
+    <table>
+      <tr><th>机器</th><th>后端</th><th>tok/sec</th><th>备注</th></tr>
+      <tr><td>Apple M5 Pro</td><td>NEON</td><td class="c">10,168,430</td><td>C 版，15 次运行中位数</td></tr>
+      <tr><td>AMD Ryzen 5 5600H</td><td>AVX2</td><td class="c">6,927,775</td><td>C 版，5 次运行中位数</td></tr>
+      <tr><td>AMD Ryzen 9 7940H（本机）</td><td>AVX2</td><td class="c">5.39M</td><td>2026-08-31 实测 · C</td></tr>
+      <tr><td>AMD Ryzen 9 7940H（本机）</td><td>AVX2</td><td class="z">5.57M</td><td>2026-08-31 实测 · Zig（训练向量化后）</td></tr>
+    </table>
+    <p class="note" style="margin-top:8px; margin-bottom:0;">文档还记录：同一台 7940H 上 zig cc（clang）-Ofast 比 gcc -O3 -ffast-math 快约 9%；Rosetta 2 下 AVX2 版掉到 2.23M，仅为原生 1/3。</p>
+  </div>
+</div></section>
+
+<section id="train"><div class="wrap">
+  <h2>训练曲线 <span class="tag">20,000 STEPS · SEED 42</span></h2>
+  <p class="lead">两个版本用同一随机种子（xorshift64, seed=42）训练同一模型。曲线几乎重合——最终平均 loss 仅差 <b style="color:var(--text)">0.0005 nats</b>（2.2189 vs 2.2194），逐点最大偏差 0.054，来自浮点运算顺序差异的放大；向量化反传没有引入系统性的精度损失。</p>
+  <div class="card chartbox">
+    <div class="legend">
+      <span><i style="background:var(--c-blue)"></i>C 版</span>
+      <span><i style="background:var(--z-orange)"></i>Zig 版</span>
+      <span class="toggle"><button id="btnAvg" class="on">平均 loss</button><button id="btnStep">单步 loss</button></span>
+    </div>
+    <svg id="lossChart" viewBox="0 0 960 340" preserveAspectRatio="none"></svg>
+    <div id="tip"></div>
+  </div>
+</div></section>
+
+<section id="samples"><div class="wrap">
+  <h2>生成名字 <span class="tag">TEMPERATURE 0.5</span></h2>
+  <p class="lead">训练完成后各采样 10 个名字。种子相同，但两版内核的浮点求和顺序不同，舍入差异在采样中被逐步放大——首个样例就已分叉（kayle vs kayley），风格却如出一辙。这就是字符级 GPT 的魅力。</p>
+  <div class="card">
+    <div class="samples">
+      <div class="chipbox">
+        <h4 class="c">C 版输出</h4>
+        <div class="chips">
+          <span class="chip c">kayley</span><span class="chip c">maria</span><span class="chip c">arana</span><span class="chip c">shaye</span><span class="chip c">rai</span><span class="chip c">anilyn</span><span class="chip c">saria</span><span class="chip c">saria</span><span class="chip c">anilan</span><span class="chip c">elyna</span>
+        </div>
+      </div>
+      <div class="chipbox">
+        <h4 class="z">Zig 版输出</h4>
+        <div class="chips">
+          <span class="chip z">kayle</span><span class="chip z">arisha</span><span class="chip z">arasan</span><span class="chip z">mayan</span><span class="chip z">jayan</span><span class="chip z">dele</span><span class="chip z">aniley</span><span class="chip z">elana</span><span class="chip z">kalana</span><span class="chip z">shadi</span>
+        </div>
+      </div>
+    </div>
+    <div class="callout blue">模型只有 <b>4,192 个参数</b>，2/3 的名字在训练集中从未出现过（测试集 loss 2.2039 &lt; 训练集 2.2054），是在泛化而非背诵。</div>
+  </div>
+</div></section>
+
+<section id="code"><div class="wrap">
+  <h2>代码结构 <span class="tag">1 FILE · NO DEPS</span></h2>
+  <p class="lead">同样的算法骨架（加载语料 → tokenizer → 参数 → 前向/反向 → Adam → 打包权重 → 推理基准），两份实现。行数接近，但表达同一件事的成本完全不同。</p>
+  <div class="metrics">
+    <div class="metric"><div class="t">源码行数（总 / 非空）</div>
+      <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">1492 / 1319</span></div>
+      <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:93.8%"></i></span><span class="n">1399 / 1300</span></div>
+      <div class="cap">Zig 行数已接近 C（−6%，反转向量化增加了显式宽度标注），且无需任何头文件与宏</div>
+    </div>
+    <div class="metric"><div class="t">SIMD 后端份数</div>
+      <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">2 套</span></div>
+      <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:50%"></i></span><span class="n">1 套</span></div>
+      <div class="cap">C 用 #ifdef 维护 AVX2 + NEON 双份内核；Zig 用 @Vector 单一源码自动降级到各架构宽度</div>
+    </div>
+    <div class="metric"><div class="t">预处理器指令</div>
+      <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">85 条</span></div>
+      <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:2%"></i></span><span class="n">0 条</span></div>
+      <div class="cap">#include / #define / #ifdef / #pragma；Zig 用 const、@import、builtin 取代</div>
+    </div>
+    <div class="metric"><div class="t">底层 SIMD 表达</div>
+      <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">391 处</span></div>
+      <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:16%"></i></span><span class="n">64 处</span></div>
+      <div class="cap">C 直接写 _mm256_* / vld1q_* intrinsics；Zig 只有 @mulAdd(49) + @reduce(10) + @Vector 声明(5)，指令序列交给 codegen</div>
+    </div>
+    <div class="metric"><div class="t">强制类型转换</div>
+      <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">隐式随处</span></div>
+      <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:70%"></i></span><span class="n">显式 194 处</span></div>
+      <div class="cap">Zig 要求 @intCast / @ptrCast / @floatCast 逐点声明意图（@ptrCast 170、@intCast 16、@floatCast 3、@bitCast 2 …）</div>
+    </div>
+    <div class="metric"><div class="t">依赖</div>
+      <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:50%"></i></span><span class="n">libc</span></div>
+      <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:60%"></i></span><span class="n">libc + std</span></div>
+      <div class="cap">Zig 版仍通过 @cImport 调用 printf/fopen 与 c_allocator，移植刻意保留了 1:1 结构以便对照</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3>特性对照表</h3>
+    <table class="feat">
+      <tr><th>维度</th><th>C 版（src/microgpt.c）</th><th>Zig 版（src/microgpt.zig）</th></tr>
+      <tr><td>架构分发</td><td><code>#if defined(__x86_64__)</code> 编译期复制双内核</td><td><code>builtin.cpu.arch</code> 探测 + <code>@Vector</code> 单内核跨架构</td></tr>
+      <tr><td>SIMD 写法</td><td>x86 intrinsics + ARM NEON intrinsics 各写一遍</td><td>Vec4/Vec8 向量类型，<code>@mulAdd</code>、<code>@reduce</code></td></tr>
+      <tr><td>内存管理</td><td><code>calloc</code> / 手动 <code>free</code>（结尾 60+ 行释放）</td><td><code>gpa.alloc</code> 切片（带长度），同样手动 <code>gpa.free</code>，ReleaseFast 下越界不 panic</td></tr>
+      <tr><td>对齐分配</td><td><code>_aligned_malloc / aligned_alloc</code> 平台宏切换</td><td><code>gpa.alignedAlloc</code> 一个 API；全局数组 <code>align(64)</code></td></tr>
+      <tr><td>位级技巧</td><td>union { float; int; }  punning</td><td><code>@bitCast</code>，类型安全且意图明确</td></tr>
+      <tr><td>编译期常量</td><td><code>#define N_EMBD 16</code></td><td><code>const N_EMBD: usize = 16</code>（有类型、可被类型系统使用）</td></tr>
+      <tr><td>构建</td><td>Makefile 或直接经 zig cc</td><td><code>zig build</code>，C 版作为对照 artifact 一并产出</td></tr>
+      <tr><td>安全网</td><td>UB 静默发生</td><td>Debug 模式自动越界检查 + 溢出检查</td></tr>
+    </table>
+  </div>
+</div></section>
+
+<section id="side"><div class="wrap">
+  <h2>源码并排对比 <span class="tag">SIDE BY SIDE</span></h2>
+  <p class="lead">挑五个最有代表性的切面，看同一逻辑在两种语言里的样子。左 C 右 Zig。</p>
+  <div class="tabs" id="codeTabs">
+    <button class="on" data-p="p1">SIMD 点积</button>
+    <button data-p="p2">后端选择</button>
+    <button data-p="p3">快速 exp</button>
+    <button data-p="p4">内存管理</button>
+    <button data-p="p5">打包权重</button>
+  </div>
+  <div class="panes">
+    <div class="pane on" id="p1">
+      <div class="code"><div class="cap c">C<span class="file">microgpt.c · dot16（AVX2 版；NEON 还要再写一份）</span></div>
+<pre data-lang="c">static __attribute__((always_inline)) inline float dot16(const float *a, const float *b) {
+  __m256 r = _mm256_fmadd_ps(_mm256_loadu_ps(a),   _mm256_loadu_ps(b),
+             _mm256_mul_ps (_mm256_loadu_ps(a+8),  _mm256_loadu_ps(b+8)));
+  __m128 lo = _mm256_castps256_ps128(r), hi = _mm256_extractf128_ps(r, 1);
+  lo = _mm_add_ps(lo, hi); lo = _mm_hadd_ps(lo, lo); lo = _mm_hadd_ps(lo, lo);
+  return _mm_cvtss_f32(lo);
+}</pre></div>
+      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · dot16（一份源码，x86/ARM 通吃）</span></div>
+<pre data-lang="zig">inline fn dot16(a: *const [16]f32, b: *const [16]f32) f32 {
+    const va0: Vec8 = a[0..8].*;
+    const vb0: Vec8 = b[0..8].*;
+    const va1: Vec8 = a[8..16].*;
+    const vb1: Vec8 = b[8..16].*;
+    const p0 = va0 * vb0;
+    const p1 = va1 * vb1;
+    return @reduce(.Add, p0 + p1);
+}</pre></div>
+      <div class="codenote">同样的数学。C 里“水平求和”要手工排布 cast/extract/hadd 指令树；Zig 里 <b style="color:var(--z-orange)">@reduce(.Add, …)</b> 一句话，codegen 按目标宽度（AVX2 8-lane / NEON 4-lane×2）自行生成。</div>
+    </div>
+
+    <div class="pane" id="p2">
+      <div class="code"><div class="cap c">C<span class="file">microgpt.c · 文件头</span></div>
+<pre data-lang="c">#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+  #define MG_SIMD_AVX2 1
+  #define MG_SIMD_NAME "AVX2"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+  #define MG_SIMD_NEON 1
+  #define MG_SIMD_NAME "NEON"
+#else
+  #error "microGPT-C requires x86-64 (AVX2) or AArch64 (NEON)"
+#endif</pre></div>
+      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · 文件头</span></div>
+<pre data-lang="zig">const builtin = @import("builtin");
+
+const is_x86 = builtin.cpu.arch == .x86_64;
+const is_aarch64 = builtin.cpu.arch == .aarch64;</pre></div>
+      <div class="codenote">C 的 #ifdef 只是文本开关，宏内部拼错要等到展开后在某个架构上才爆炸；Zig 的 builtin 是有类型的编译期值，且因为内核本身架构无关，这段只用来打印名字。<b style="color:var(--text)">代价</b>：C 可以在 AVX2 上手工用 256-bit、在 NEON 上精心排 4-lane 寄存器，Zig 的统一源码放弃了这种逐架构雕刻。</div>
+    </div>
+
+    <div class="pane" id="p3">
+      <div class="code"><div class="cap c">C<span class="file">microgpt.c · 位技巧版 exp（跳过指数单元，精度换速度）</span></div>
+<pre data-lang="c">static __attribute__((always_inline)) inline float fexpf(float x) {
+  union { float f; int i; } u;
+  u.i = (int)(12102203.1615614f * x * 1.4426950408f) + 1065353216;
+  return u.f;
+}</pre></div>
+      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · 同一算法</span></div>
+<pre data-lang="zig">inline fn fexpf(x: f32) f32 {
+    const bits: i32 = @as(i32, @intFromFloat(12102203.1615614 * x * 1.4426950408))
+                   + 1065353216;
+    return @bitCast(bits);
+}</pre></div>
+      <div class="codenote">union 型 punning 在 C 标准里是实现定义行为（clang/gcc 都支持，但 -strict-aliasing 是雷区）；Zig 的 <b style="color:var(--z-orange)">@bitCast</b> 是语言保证的一等操作，f32↔i32 位重解释无需 union。</div>
+    </div>
+
+    <div class="pane" id="p4">
+      <div class="code"><div class="cap c">C<span class="file">microgpt.c · 分配与释放</span></div>
+<pre data-lang="c">static float *make_zero(int size) {
+  return (float *)calloc(size, sizeof(float));
+}
+/* ……程序结尾： */
+free(wte);
+free(d_wte);
+free(adam_m_wte);
+free(adam_v_wte);
+/* ……共 60+ 行逐指针 free */</pre></div>
+      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · 分配与释放</span></div>
+<pre data-lang="zig">fn make_zero(size: usize) []f32 {
+    const p = gpa.alloc(f32, size) catch {
+        std.debug.print("out of memory\n", .{});
+        clib.exit(1);
+        unreachable;
+    };
+    @memset(p, 0);
+    return p;   // 返回的是切片: ptr + len
+}
+/* ……程序结尾： */
+gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div>
+      <div class="codenote">诚实说明：Zig 版目前<b style="color:var(--text)">同样手动 free</b>（用 c_allocator 保持与 C 的 1:1 对照），没有用 arena 一步清零。差别在于 C 的 <code>float*</code> 一旦离开 calloc 就丢失长度，一切靠调用方记忆；Zig 的 <code>[]f32</code> 切片自带边界，Debug 构建下越界立刻 panic，ReleaseFast 才是裸行为。</div>
+    </div>
+
+    <div class="pane" id="p5">
+      <div class="code"><div class="cap c">C<span class="file">microgpt.c · pack_t 转置打包</span></div>
+<pre data-lang="c">static void pack_t(const float *src, float *dst, int nout, int nin) {
+  for (int r = 0; r &lt; nout; r++)
+    for (int c = 0; c &lt; nin; c++)
+      dst[(size_t)c * nout + r] = src[(size_t)r * nin + c];
+}</pre></div>
+      <div class="code"><div class="cap z">Zig<span class="file">microgpt.zig · pack_t 转置打包</span></div>
+<pre data-lang="zig">fn pack_t(src: []const f32, dst: []f32, nout: usize, nin: usize) void {
+    for (0..nout) |r| {
+        for (0..nin) |c_idx| {
+            dst[c_idx * nout + r] = src[r * nin + c_idx];
+        }
+    }
+}</pre></div>
+      <div class="codenote">这段几乎逐行对应——移植刻意保持同构。区别：Zig 的 <code>usize</code> 从类型上根除了 <code>(size_t)</code> 强转与 int 溢出风险（负索引、混号比较直接编译错误）；越界访问在 Debug 下是 panic 而不是未定义行为。</div>
+    </div>
+  </div>
+</div></section>
+
+<section id="build"><div class="wrap">
+  <h2>构建方式 <span class="tag">BUILD</span></h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="color:var(--z-orange)">一条命令出两个二进制</h3>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast<br><span class="p">→</span> zig-out/bin/microgpt.exe     <span class="p"># Zig 版</span><br><span class="p">→</span> zig-out/bin/microgpt-c.exe  <span class="p"># C 版（A/B 对照）</span></div>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast run   <span class="p"># 直接跑</span><br><span class="p">$</span> make CC=gcc run                <span class="p"># 老工具链对照</span></div>
+      <p class="note" style="margin-bottom:0;">build.zig 里 C 版用 <code>addCSourceFile</code> 编入，flags 为 -Ofast -march=native -mavx2 -mfma —— 两个二进制由同一套 Zig/LLVM 工具链编译，最大化可比性。</p>
+    </div>
+    <div class="card">
+      <h3>仓库定位</h3>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">项目现在是纯 Zig 主导（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">src/microgpt.zig</code> 为主 artifact），C 源码（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">src/microgpt.c</code>）保留作为参考实现并随每次构建自动编译，用于 A/B 对比——本页正是这个对照机制的可视化快照。</p>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:12px;">两个版本都：单文件、除 libc 外零依赖、同一算法（前向/反向/Adam/采样/权重打包/预计算 (token,pos) 表/融合采样器）。</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="verdict"><div class="wrap">
+  <h2>结论 <span class="tag">VERDICT</span></h2>
+  <div class="card">
+    <table class="feat">
+      <tr><th></th><th>胜者</th><th>说明</th></tr>
+      <tr><td>纯推理吞吐</td><td><b style="color:var(--z-orange)">Zig +3.4%</b></td><td>@Vector 内核的 LLVM 调度更贴合 Zen4 的 FMA 流水</td></tr>
+      <tr><td>全流程耗时</td><td><b style="color:var(--z-orange)">Zig −25%</b></td><td>训练反传向量化后训练段 ~0.32s，对标量反传的 C（~0.70s）反超</td></tr>
+      <tr><td>数值行为</td><td><b style="color:var(--dim)">平</b></td><td>同种子下 avg loss 差 0.0005，样例首轮即分叉（舍入放大）</td></tr>
+      <tr><td>可维护性</td><td><b style="color:var(--z-orange)">Zig</b></td><td>1 套跨架构内核 vs 2 套手工镜像；无预处理层</td></tr>
+      <tr><td>逐架构雕刻空间</td><td><b style="color:var(--c-blue)">C</b></td><td>寄存器分配、lane 宽度可以手工抠到每周期</td></tr>
+      <tr><td>开发期安全网</td><td><b style="color:var(--z-orange)">Zig</b></td><td>Debug 越界 panic、显式转换意图、编译期维度检查</td></tr>
+    </table>
+    <div class="callout" style="margin-bottom:0;"><b>一句话：</b>极致手工调度的热内核，C 的 intrinsics 仍是天花板级工具；但当你要用<b>一份源码</b>喂饱 x86 和 ARM 两种宽度、还想要编译器和 Debug 模式的护网时，Zig 的 @Vector + 类型系统明显更划算——这次训练热路径同样向量化之后，Zig 版性能已全面反超，仓库留 C 做标尺，量出的正是这份进步。</div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  数据于 2026-08-31 在 AMD Ryzen 9 7940H 上由 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/microgpt.exe</code> 与 <code style="font-family:ui-monospace,Consolas,monospace;">microgpt-c.exe</code> 实测采集（Zig 为训练内核向量化后重测） · microGPT-C 项目可视化对比页
+</div></footer>
+
+<script>
+const LOSS = {"steps":[1,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000,2100,2200,2300,2400,2500,2600,2700,2800,2900,3000,3100,3200,3300,3400,3500,3600,3700,3800,3900,4000,4100,4200,4300,4400,4500,4600,4700,4800,4900,5000,5100,5200,5300,5400,5500,5600,5700,5800,5900,6000,6100,6200,6300,6400,6500,6600,6700,6800,6900,7000,7100,7200,7300,7400,7500,7600,7700,7800,7900,8000,8100,8200,8300,8400,8500,8600,8700,8800,8900,9000,9100,9200,9300,9400,9500,9600,9700,9800,9900,10000,10100,10200,10300,10400,10500,10600,10700,10800,10900,11000,11100,11200,11300,11400,11500,11600,11700,11800,11900,12000,12100,12200,12300,12400,12500,12600,12700,12800,12900,13000,13100,13200,13300,13400,13500,13600,13700,13800,13900,14000,14100,14200,14300,14400,14500,14600,14700,14800,14900,15000,15100,15200,15300,15400,15500,15600,15700,15800,15900,16000,16100,16200,16300,16400,16500,16600,16700,16800,16900,17000,17100,17200,17300,17400,17500,17600,17700,17800,17900,18000,18100,18200,18300,18400,18500,18600,18700,18800,18900,19000,19100,19200,19300,19400,19500,19600,19700,19800,19900,20000],"c_loss":[3.3178,2.6561,2.2609,2.4576,2.4865,2.4086,2.7425,2.5377,2.376,2.6739,2.5907,2.7929,2.1207,2.1136,3.0441,2.3778,1.9901,2.5176,2.3709,2.1617,2.4866,2.3425,2.8273,2.1903,2.258,2.0994,1.8371,2.3706,2.7281,2.3846,2.3321,2.1836,2.628,2.6338,2.3254,2.282,1.7467,2.6424,1.5925,2.5399,1.783,2.243,1.9561,2.5793,2.5869,2.6535,1.9867,2.1518,2.9343,3.2547,2.6108,1.9313,2.0238,2.8115,2.3107,2.0424,3.1489,2.379,2.2788,2.1541,2.5654,2.3747,2.3061,2.0667,2.4711,2.2846,2.7176,1.721,2.5737,2.209,1.6757,2.5699,3.5204,1.7768,1.8307,2.0763,2.2298,1.9229,2.4345,2.7512,3.1573,2.0788,2.1689,3.3599,1.7378,2.414,2.8336,2.0584,2.2973,1.44,2.4135,1.7331,2.2237,1.6304,2.0142,2.1627,1.953,2.3613,2.2244,1.8639,1.9602,2.0492,2.1373,2.8276,2.3928,2.7837,1.6261,2.0176,2.303,2.4731,2.1342,1.9253,1.7347,2.1752,2.7208,1.9639,2.203,2.3221,1.7928,2.5687,2.6943,1.6786,2.5205,2.2272,2.7929,1.9285,3.2378,2.2912,2.8963,3.0459,2.6857,2.0777,1.7903,2.1248,1.9394,2.277,2.1615,2.6525,2.2438,1.6805,2.4761,2.5626,2.6562,1.8113,2.2862,2.1854,1.8892,2.3463,2.5116,1.9927,2.6859,2.2906,2.587,1.8962,2.0651,1.8061,2.5993,2.7342,1.8166,2.66,2.8097,1.7503,1.8507,2.1616,2.0407,2.0062,2.0954,2.3534,3.4415,2.1232,2.8117,2.666,2.4105,3.0673,2.1576,2.3035,2.1187,1.9518,1.9702,1.8826,1.8557,1.6697,1.9041,2.0371,1.9184,3.0317,2.1476,2.0978,2.1421,2.3903,2.0584,2.2974,1.7977,2.083,1.726,2.167,2.3333,1.7446,2.393,2.2451,2.3384],"c_avg":[3.3002,2.9623,2.7281,2.5825,2.5494,2.52,2.5056,2.5051,2.4916,2.433,2.4146,2.3653,2.3288,2.409,2.4258,2.3913,2.3934,2.3604,2.3721,2.3833,2.4228,2.4106,2.3932,2.3668,2.3575,2.3641,2.3046,2.3946,2.3623,2.4048,2.3956,2.3511,2.2697,2.34,2.3303,2.309,2.342,2.3743,2.3058,2.3417,2.3909,2.3378,2.3237,2.327,2.3234,2.3758,2.3405,2.3078,2.3435,2.3099,2.2939,2.3523,2.3667,2.2856,2.3064,2.3253,2.3387,2.3394,2.3096,2.3157,2.3375,2.2868,2.2893,2.3402,2.3219,2.3196,2.3379,2.305,2.2887,2.2727,2.2923,2.3007,2.297,2.257,2.3116,2.2984,2.3371,2.3035,2.3351,2.2913,2.33,2.2955,2.3182,2.2825,2.2585,2.2593,2.3374,2.3268,2.2687,2.2824,2.2402,2.2676,2.2724,2.3315,2.2909,2.2775,2.2497,2.3084,2.2345,2.2244,2.2562,2.2563,2.2398,2.2748,2.2774,2.3018,2.2616,2.2561,2.2788,2.3234,2.2734,2.3055,2.2919,2.2803,2.2737,2.2472,2.2182,2.2113,2.1971,2.2533,2.2767,2.2241,2.2788,2.2712,2.2009,2.2034,2.2422,2.2651,2.2557,2.2105,2.1957,2.2347,2.2937,2.2274,2.2826,2.2691,2.2343,2.2221,2.2372,2.2551,2.2167,2.2677,2.2695,2.2703,2.2322,2.2455,2.2511,2.2376,2.2328,2.2321,2.2136,2.2077,2.2354,2.1908,2.2005,2.2129,2.1737,2.2053,2.271,2.2703,2.2835,2.2481,2.2128,2.2701,2.2637,2.2881,2.2733,2.2896,2.3027,2.2587,2.2619,2.2063,2.2358,2.2435,2.2215,2.2216,2.2346,2.1922,2.1403,2.1338,2.2111,2.1864,2.191,2.2079,2.2006,2.2096,2.2214,2.2086,2.214,2.2508,2.2004,2.1996,2.2441,2.2049,2.2358,2.1724,2.2123,2.2282,2.2212,2.2354,2.2189],"zig_loss":[3.3178,2.6561,2.2609,2.4576,2.4865,2.4086,2.7425,2.5377,2.376,2.674,2.5903,2.7927,2.1208,2.1139,3.044,2.3778,1.9903,2.5188,2.3695,2.1596,2.4879,2.3423,2.8258,2.1895,2.2587,2.1009,1.8385,2.3692,2.7303,2.3795,2.3336,2.1833,2.6297,2.6353,2.3157,2.2784,1.7401,2.6423,1.5932,2.5342,1.7725,2.247,1.9557,2.5765,2.5881,2.6539,1.989,2.1519,2.9379,3.2587,2.6032,1.9268,2.0252,2.8269,2.3109,2.0499,3.1508,2.3919,2.2652,2.1468,2.5597,2.3789,2.3013,2.0658,2.4766,2.2764,2.7193,1.7161,2.5886,2.2032,1.6784,2.5685,3.5134,1.7724,1.8538,2.0758,2.2184,1.9107,2.4314,2.7533,3.1539,2.073,2.152,3.357,1.7221,2.445,2.8257,2.0501,2.2909,1.4446,2.3944,1.7288,2.2157,1.6339,2.018,2.1609,1.9494,2.3853,2.2009,1.8551,1.9582,2.0453,2.1334,2.8158,2.3635,2.8373,1.6069,2.0082,2.305,2.492,2.0904,1.9321,1.7281,2.2028,2.755,1.9805,2.1905,2.3,1.8065,2.5788,2.6813,1.6846,2.5141,2.255,2.8067,1.93,3.2178,2.2728,2.8529,3.0717,2.6741,2.1101,1.7928,2.1106,1.9421,2.3176,2.1649,2.6214,2.2314,1.6488,2.4833,2.5455,2.6399,1.8053,2.2782,2.1862,1.8789,2.3418,2.516,2.0273,2.6945,2.2652,2.5882,1.892,2.0231,1.8276,2.6041,2.7335,1.8102,2.6464,2.798,1.7497,1.8425,2.1571,2.0544,2.0212,2.0864,2.3725,3.4937,2.1195,2.8251,2.6444,2.389,3.0987,2.1478,2.2924,2.1051,1.9799,1.9752,1.8902,1.8709,1.6758,1.9086,2.0553,1.9112,3.0586,2.1597,2.0497,2.1314,2.3896,2.0629,2.2871,1.7869,2.0711,1.7373,2.1713,2.3355,1.7406,2.3445,2.2326,2.3496],"zig_avg":[3.3002,2.9623,2.7281,2.5825,2.5494,2.52,2.5056,2.5052,2.4916,2.433,2.4145,2.3653,2.3287,2.409,2.4258,2.3913,2.3934,2.3604,2.372,2.3833,2.4234,2.4109,2.3932,2.3671,2.3577,2.364,2.3047,2.3943,2.3624,2.4046,2.3957,2.3502,2.2695,2.3401,2.3306,2.3089,2.3414,2.3739,2.3058,2.3414,2.3907,2.3382,2.3243,2.327,2.3237,2.3762,2.3406,2.3078,2.3435,2.3096,2.2941,2.3526,2.3669,2.286,2.3066,2.3259,2.3389,2.343,2.3121,2.3162,2.3377,2.2877,2.2889,2.3403,2.3223,2.3204,2.3384,2.3043,2.2899,2.2728,2.2905,2.3008,2.2966,2.2576,2.3122,2.3011,2.3395,2.3037,2.3355,2.2912,2.3293,2.296,2.32,2.2836,2.2579,2.2587,2.3369,2.3263,2.2697,2.284,2.2403,2.2681,2.2732,2.3302,2.2899,2.2775,2.2493,2.3088,2.2349,2.2221,2.2563,2.2571,2.2414,2.275,2.2769,2.3012,2.2615,2.2573,2.2804,2.3257,2.2741,2.3023,2.29,2.2797,2.2738,2.2498,2.2168,2.208,2.1956,2.2523,2.2747,2.2237,2.2816,2.2727,2.2008,2.2024,2.2428,2.2633,2.2542,2.2105,2.1965,2.2348,2.2928,2.2256,2.2842,2.2706,2.2345,2.2207,2.2396,2.2557,2.2184,2.2689,2.2697,2.2723,2.2362,2.2479,2.2495,2.2349,2.2339,2.2328,2.214,2.2096,2.2353,2.1935,2.1982,2.2119,2.1725,2.2059,2.271,2.2692,2.2849,2.2488,2.2136,2.2716,2.2655,2.2889,2.2717,2.288,2.3053,2.2611,2.2627,2.2053,2.232,2.2449,2.2236,2.2209,2.2352,2.193,2.1417,2.1333,2.2124,2.185,2.1899,2.2068,2.2005,2.2078,2.2208,2.2066,2.2134,2.2521,2.2028,2.1991,2.243,2.205,2.2358,2.1724,2.2117,2.2255,2.2211,2.2344,2.2194]};
+
+/* ---- animate bars on view ---- */
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting) {
+    e.target.querySelectorAll('.fill').forEach(f => f.style.width = f.dataset.w + '%');
+    io.unobserve(e.target);
+  }
+}), {threshold:.3});
+document.querySelectorAll('.bars').forEach(b => {
+  b.querySelectorAll('.fill').forEach(f => f.style.width = '0%');
+  io.observe(b);
+});
+
+/* ---- tabs ---- */
+document.querySelectorAll('#codeTabs button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('#codeTabs button').forEach(b => b.classList.toggle('on', b === btn));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === btn.dataset.p));
+}));
+
+/* ---- tiny syntax highlighter ---- */
+(function(){
+  const KW = {
+    c: 'static|inline|return|if|else|for|while|typedef|struct|void|int|float|char|const|double|sizeof|break|continue|unsigned|union',
+    zig: 'const|fn|pub|var|return|if|else|for|while|inline|struct|defer|catch|unreachable|true|false|and|or|usize|f32|f64|i32|u8|u64|bool|void|comptime'
+  };
+  function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  document.querySelectorAll('pre[data-lang]').forEach(pre => {
+    const lang = pre.dataset.lang, src = pre.textContent;
+    const re = new RegExp(
+      '(#[a-z_]+|#\\[[^\\]]*\\])|(@[A-Za-z_]+)|("[^"]*")|\\b(' + KW[lang] + ')\\b' +
+      '|\\b([A-Za-z_]\\w*)(?=\\s*\\()|\\b(\\d[\\d_.xxa-fA-F]*\\w*)\\b', 'g');
+    let out = '', last = 0, m;
+    while ((m = re.exec(src))) {
+      out += esc(src.slice(last, m.index));
+      const cls = m[1] ? 'pp' : m[2] ? 'at' : m[3] ? 'str' : m[5] ? 'k' : m[6] ? 'fn' : 'num';
+      out += '<span class="' + cls + '">' + esc(m[0]) + '</span>';
+      last = m.index + m[0].length;
+    }
+    out += esc(src.slice(last));
+    pre.innerHTML = out;
+  });
+})();
+
+/* ---- loss chart ---- */
+(function(){
+  const svg = document.getElementById('lossChart'), W = 960, H = 340, PL = 46, PR = 12, PT = 14, PB = 30;
+  const steps = LOSS.steps;
+  let mode = 'avg';
+  const series = () => mode === 'avg'
+    ? [['c_avg','var(--c-blue)','C avg'],['zig_avg','var(--z-orange)','Zig avg']]
+    : [['c_loss','var(--c-blue)','C step'],['zig_loss','var(--z-orange)','Zig step']];
+
+  function draw(){
+    const S = series();
+    let lo = Infinity, hi = -Infinity;
+    S.forEach(([k]) => LOSS[k].forEach(v => { lo = Math.min(lo,v); hi = Math.max(hi,v); }));
+    const pad = (hi-lo)*.06; lo -= pad; hi += pad;
+    const X = i => PL + (W-PL-PR) * (steps[i]-1) / (steps[steps.length-1]-1);
+    const Y = v => PT + (H-PT-PB) * (1-(v-lo)/(hi-lo));
+    let g = '';
+    /* gridlines */
+    for (let t=0;t<=4;t++){
+      const v = lo+(hi-lo)*t/4, y = Y(v);
+      g += '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="#22304a" stroke-width="1"/>';
+      g += '<text x="'+(PL-8)+'" y="'+(y+4)+'" fill="#5b6a82" font-size="11" text-anchor="end">'+v.toFixed(2)+'</text>';
+    }
+    [1,5,10,15,20].forEach(k=>{
+      const x = PL + (W-PL-PR)*(k*1000-1)/(steps[steps.length-1]-1);
+      g += '<text x="'+x+'" y="'+(H-8)+'" fill="#5b6a82" font-size="11" text-anchor="middle">'+k+'k</text>';
+    });
+    S.forEach(([k,col])=>{
+      g += '<polyline fill="none" stroke="'+col+'" stroke-width="2" points="'+
+           LOSS[k].map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ')+'"/>';
+    });
+    g += '<line id="cross" x1="0" y1="'+PT+'" x2="0" y2="'+(H-PB)+'" stroke="#8b98ad" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>';
+    svg.innerHTML = g;
+    return {X,Y};
+  }
+  let xy = draw();
+  document.getElementById('btnAvg').onclick = e => { mode='avg'; e.target.classList.add('on'); btnStep.classList.remove('on'); xy = draw(); };
+  document.getElementById('btnStep').onclick = e => { mode='step'; e.target.classList.add('on'); btnAvg.classList.remove('on'); xy = draw(); };
+
+  const tip = document.getElementById('tip'), cross = () => svg.querySelector('#cross');
+  svg.addEventListener('mousemove', ev => {
+    const r = svg.getBoundingClientRect();
+    const fx = (ev.clientX - r.left) / r.width * W;
+    if (fx < PL || fx > W-PR) { tip.style.display='none'; cross().style.display='none'; return; }
+    let i = Math.round((fx-PL)/(W-PL-PR)*(steps.length-1));
+    i = Math.max(0, Math.min(steps.length-1, i));
+    const x = xy.X(i);
+    cross().setAttribute('x1',x); cross().setAttribute('x2',x); cross().style.display='';
+    const c = LOSS[mode==='avg'?'c_avg':'c_loss'][i], z = LOSS[mode==='avg'?'zig_avg':'zig_loss'][i];
+    tip.innerHTML = 'step '+steps[i]+'<br><span class="c">C '+c.toFixed(4)+'</span> · <span class="z">Zig '+z.toFixed(4)+'</span>';
+    tip.style.display = 'block';
+    const px = x / W * r.width;
+    tip.style.left = Math.min(r.width-170, Math.max(6, px+12)) + 'px';
+    tip.style.top = '40px';
+  });
+  svg.addEventListener('mouseleave', () => { tip.style.display='none'; cross().style.display='none'; });
+})();
+</script>
+</body>
+</html>
