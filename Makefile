@@ -1,7 +1,20 @@
-CC ?= cc
+# Default to zig's clang; `?=` is skipped because make's built-in default
+# already defines CC, so the override is done explicitly when the user has
+# not set CC themselves.
+ifeq ($(origin CC),default)
+CC := zig
+endif
 
-# clang ignores the in-file `#pragma GCC target`, so on x86 the AVX2/FMA
-# feature flags have to be passed explicitly or the intrinsics won't build.
+# `zig cc` is a drop-in clang. When CC is zig the subcommand has to be
+# explicit, otherwise `zig -Ofast …` is treated as a zig build invocation.
+ifeq ($(CC),zig)
+  ZCC := zig cc
+else
+  ZCC := $(CC)
+endif
+
+# clang ignores the in-file `#pragma GCC target`, so the AVX2/FMA feature
+# flags have to be passed explicitly or the intrinsics won't build.
 ifeq ($(OS),Windows_NT)
   UNAME_M := x86_64
 else
@@ -13,7 +26,11 @@ else
   ARCHFLAGS ?= -march=native
 endif
 
-CFLAGS  ?= -O3 $(ARCHFLAGS) -ffast-math -Wall
+# zig's clang is more aggressive than gcc here: -Ofast (no strict IEEE, fast
+# math, no signed-zero preservation) is what it takes to match gcc's
+# -O3 -ffast-math and it comes out ~9% faster on this box. -ffast-math is
+# implied by -Ofast, so it is not repeated.
+CFLAGS  ?= -Ofast $(ARCHFLAGS) -Wall
 LDLIBS  := -lm
 BIN     := microgpt
 SRC     := src/microgpt.c
@@ -22,12 +39,12 @@ DATA    := data/names.txt
 all: $(BIN)
 
 $(BIN): $(SRC)
-	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
+	$(ZCC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 run: $(BIN)
 	./$(BIN) $(DATA)
 
 clean:
-	rm -rf $(BIN) *.o *.dSYM
+	rm -rf $(BIN) zig-out .zig-cache *.o *.dSYM
 
 .PHONY: all run clean

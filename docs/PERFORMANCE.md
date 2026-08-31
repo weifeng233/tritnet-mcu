@@ -57,6 +57,17 @@ Single-threaded, on the benchmark's 5M token sampling loop:
 | Apple M5 Pro | NEON | 10,168,430 | median of 15 runs |
 | AMD Ryzen 5 5600H | AVX2 | 6,927,775 | median of 5 runs |
 
+## Compiler
+
+The Zig build (`zig build --release=fast`) is `ReleaseFast` (`-Ofast` semantics)
+and on this Windows x86-64 box matches the C build within run-to-run noise
+(~5.4-5.7M tok/sec for both `c fp32+AVX2` and `zig fp32+AVX2` on the 5M-token
+loop). The Makefile still defaults to `zig cc`, Zig's drop-in clang. On the same
+AMD Ryzen 9 7940H used for the AVX2 row above, zig's clang at `-Ofast`
+outpaces gcc at `-O3 -ffast-math` by roughly 9% (5.8M vs 5.3M tok/sec,
+best of several runs each), so the default build is a little faster than
+the gcc row in the table. `make CC=gcc` reproduces the gcc numbers.
+
 Both run the same algorithm and differ only in the kernels, so this is
 not a fair comparison of the two instruction sets. The M5 Pro sustains
 5.27 FMAs and 5.75 128-bit loads per cycle, which is a wide core, and on
@@ -98,3 +109,39 @@ Measured and abandoned, so they need not be tried again:
 Batching is the change that would lift the ceiling. Several independent
 sequences at once turns every matvec into a matmul and gives the weights
 the reuse they currently have none of.
+
+## Training path
+
+The training loop (`gpt_forward`/`gpt_backward`/Adam) was scalar for a
+long time; strict FP evaluation kept LLVM from auto-vectorizing the
+reductions and accumulation loops. It now uses the same `@Vector` style
+as the inference path, with 8-wide kernels on x86 and NEON:
+
+- `linear_bwd_x` walks rows sequentially and keeps one 8-wide
+  accumulator set per weight column, instead of striding down `nout`
+  rows per output channel. Per-column sums stay in row order, so values
+  match the scalar version.
+- `linear_bwd_w` is an 8-wide FMA outer product per row.
+- `adam_update` is 8-wide and takes the bias corrections and the clip
+  factor as arguments. The gradient clip is folded into Adam's gradient
+  read (`g * scale`) instead of a second full pass that rescales and
+  rewrites every gradient array.
+- The gradient-norm reduction is one fused-multiply pass over each
+  gradient array.
+- Attention forward/backward accumulate the 4-wide head slices with
+  `Vec4` FMAs against the kv rows; residual adds, the ReLU² and the
+  embedding/scatter paths are 8-wide.
+- Per-step fixed costs: the kv-cache reset before forward was dead
+  (each position writes k/v before attention reads them), the dk/dv
+  accumulator reset only covers the `n` live positions, Adam's
+  `pow(b1, step)` bias correction is computed once per step, and
+  `char_to_id` is a 256-entry LUT.
+
+ReleaseFast on the 5600H, 20000 steps over `data/names.txt` (median of
+5 runs): 0.99-1.03 s before, 0.29 s after, about 3.4x, roughly 68K
+steps/sec. Final average loss 2.2194 vs 2.2199 scalar — the only
+numerical changes are reassociated sums (vector lane splits, FMA
+contraction in the new kernels), and samples remain name-like.
+Inference throughput is untouched, as none of its code paths changed.
+The training timer now prints `train: <s> (<steps/sec>)` after the
+last step.

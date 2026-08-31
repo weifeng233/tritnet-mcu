@@ -9,17 +9,23 @@ in a couple of seconds and generates new ones.
 ## Build and run
 
 ```bash
-make run
+zig build --release=fast run
 ```
 
-Or run it directly, on any corpus with one item per line:
+Or with an explicit corpus:
 
 ```bash
-./microgpt data/names.txt
+./zig-out/bin/microgpt data/names.txt
 ```
 
+The project is now pure Zig (`src/microgpt.zig`, `build.zig`). The C source
+(`src/microgpt.c`) is kept as a reference and is still built as `microgpt-c`
+by `zig build --release=fast` for A/B comparison. The Makefile remains for
+`make run` / `make CC=gcc` compatibility and also defaults to `zig cc`.
+
 Builds on macOS, Linux and Windows (MSYS2), on ARM64 with NEON and x86-64
-with AVX2. The Makefile picks the flags for the host.
+with AVX2. `zig build --release=fast` maps to `-Ofast` (`ReleaseFast`) and
+`zig cc` remains available via `make`.
 
 ```
 step 5000 / 20000 | loss 2.6036  (avg 2.2940)

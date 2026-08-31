@@ -1,4 +1,8 @@
 # build output
 microgpt
+microgpt-c
+zig-out/
+.zig-cache/
 *.o
 *.dSYM/
+*.pdb
