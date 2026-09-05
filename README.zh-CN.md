@@ -5,17 +5,17 @@
 一个纯 Zig 的**训练 → 量化 → 部署框架**，面向三元权重 {-1, 0, +1} 的
 MCU 模型，附带三个完整可复现的样例。除 libc 外零依赖：一条命令完成
 fp32 预训练、BitNet 风格量化感知训练（QAT）、留出集验证、三元打包
-导出，以及证明打包产物无损的往返校验 —— 每个样例在笔记本电脑上
-数秒跑完。
+导出，以及验证打包产物无损的往返校验 —— 每个样例在笔记本电脑上
+数秒内完成。
 
 框架本体在 `src/framework.zig`（RNG、三元编解码、absmean QAT 量化器、
-Adam + 余弦调度、打包模型容器、计时）。`examples/` 目录用三个刻意不同
-的模型家族驱动它；`c/` 里的 C 引擎是部署腿，仅凭打包产物复现训练器的
-全部指标。
+Adam + 余弦调度、打包模型容器、计时）。`examples/` 目录提供三个刻意
+不同的模型家族样例；`c/` 中的 C 引擎用于部署验证，仅凭打包产物复现
+训练器的全部指标。
 
 ## 流水线
 
-每个样例在同一个进程里跑完相同的五个阶段：
+每个样例在同一进程内依次完成相同的五个阶段：
 
 1. **fp32 预训练** —— Adam + 余弦学习率调度、梯度裁剪、SIMD（经
    `@Vector` 的 AVX2/NEON）内核。
@@ -27,8 +27,8 @@ Adam + 余弦调度、打包模型容器、计时）。`examples/` 目录用三�
    延迟与存储核算。
 4. **三元打包** —— 每字节 5 个 trit
    （[compilade 的方案](https://compilade.net/blog/ternary-packing)，即
-   llama.cpp 为 BitNet 模型所用的方案）：三进制基数编码 + 向上取整
-   重标定，解码用免除法的乘法-移位。
+   llama.cpp 为 BitNet 模型所用的方案）：三进制基数编码与向上取整
+   重标定，解码使用乘法与移位实现，不包含除法运算。
 5. **往返校验** —— 重新加载打包文件、解码、再评估；指标必须与导出前
    的模型逐位一致。
 
@@ -60,13 +60,13 @@ make deploy-check                       # 对全部打包产物做 C 部署校�
 
 ## 样例 1 — `gpt_names`：字符级 micro-GPT
 
-框架的旗舰演示：microGPT-C 的微型字符级 Transformer（4,192 参数：
-1 层、4 头、16 维嵌入、64 维 MLP、ReLU²、RMSNorm），在约 3.2 万人名
-数据上训练并生成新人名。以三元权重训练并部署后，模型文件比 fp32
-权重小约 22 倍。
+基于 microGPT-C 的微型字符级 Transformer（4,192 参数：1 层、4 头、
+16 维嵌入、64 维 MLP、ReLU²、RMSNorm），在约 3.2 万人名数据上训练并
+生成新人名。以三元权重训练并部署后，模型文件体积约为 fp32 权重的
+1/22。
 
-以下结果测自 data/names.txt（80/20 训练/留出划分，20000 步 fp32 预训练
-+ 5000 步 QAT，Ryzen 9 7940H 上共约 1 秒）：
+以下结果在 data/names.txt 上测得（80/20 训练/留出划分，20000 步 fp32
+预训练 + 5000 步 QAT，Ryzen 9 7940H 上共约 1 秒）：
 
 ```
 eval (avg nats/char, float activations)
@@ -90,7 +90,7 @@ zig build --release=fast example-gpt    # 写出 modeldata/tritnetmcu_packed.bin
 
 ## 样例 2 — `gesture_cnn`：TinyML 传感器分类器
 
-最经典的 TinyML 1D-CNN 任务（EdgeImpulse / MLPerf-Tiny 风格）：基于
+典型的 TinyML 1D-CNN 任务（EdgeImpulse / MLPerf-Tiny 风格）：基于
 三轴加速度计窗口的 4 类手势识别 —— 静止（rest）/ 摇晃（shake）/
 画圈（circle）/ 敲击（tap）。数据由固定种子确定性生成（随机相位、
 幅度抖动与逐样本噪声），无需外部数据集即可复现。2,524 参数、每次
@@ -103,7 +103,7 @@ Conv1D(8 -> 16, k=4) + ReLU + MaxPool(2)   -> 16x28
 Flatten -> Dense(448 -> 4) + softmax
 ```
 
-偏置保持 fp32（2,524 参数中的 28 个）；所有卷积核与全连接权重全部
+偏置保持 fp32（2,524 参数中的 28 个）；所有卷积核与全连接权重均
 三元化。样例内的单元测试将卷积/池化内核与直接参考实现逐一对照，
 并做端到端数值梯度检查。
 
@@ -126,8 +126,8 @@ latency (host CPU, float activations)
 packed round-trip: OK (lossless)   qat 恢复 fp32->ptq 损失差距的 99.9%
 ```
 
-朴素三元化把验证准确率打到 65.75%，而 QAT 把它恢复到 100% —— 此时
-每个卷积核与全连接层都以每权重 1.6 比特的 {-1, 0, +1} trit 运行。
+朴素三元化使验证准确率降至 65.75%；QAT 将其恢复至 100%，此时每个
+卷积核与全连接层均以每权重 1.6 比特的 {-1, 0, +1} trit 运行。
 
 ```bash
 zig build --release=fast example-cnn    # 写出 modeldata/cnn1d_packed.bin + cnn1d_valset.bin
@@ -136,7 +136,7 @@ make cnn-c                              # C 部署校验（或：make deploy-che
 
 ## 样例 3 — `liquid_sine`：神经回路策略（CfC/LTC）
 
-把 [ncps](https://github.com/mlech26l/ncps) 栈（Lechner 与 Hasani 的
+将 [ncps](https://github.com/mlech26l/ncps) 栈（Lechner 与 Hasani 的
 神经回路策略，Neural Circuit Policies）移植到框架上：连续时间 RNN，
 其稀疏"布线"（wiring）是由感觉、中间、指令与运动神经元构成的回路。
 从参考实现移植的内容：
@@ -147,60 +147,61 @@ make cnn-c                              # C 部署校验（或：make deploy-che
 - 三种模式（default / pure / no_gate）的 `torch.CfCCell`，含逐神经元
   时间尺度（timespans），以及 `WiredCfCCell` 层叠 —— 其 ff1/ff2 投影按
   布线邻接关系掩码，时间门投影保持稠密，与 ncps 完全一致
-- `torch.LTCCell` —— 原始液态时间常数 ODE，每步用 6 次欧拉不动点迭代
-  求解；BPTT 把链式法则一路穿过每次迭代展开（有限差分校验通过）
+- `torch.LTCCell` —— 原始液态时间常数 ODE，每步以 6 次欧拉不动点迭代
+  求解；BPTT 在全部迭代步上展开链式法则（有限差分校验通过）
 - `torch_cfc_sinusoidal.py` 任务（sin/cos 输入、倍频正弦输出、MSE）
   推广为 1,600 条随机相位、频率抖动的序列数据集
 
 任务设定：48 步序列，输入 [0, 3·pi·k] 上的 [sin, cos]，目标是同一波形
-的倍频正弦。有两个细节让布线在量化下存活：稀疏性直接烙进 trit 本身
-（被掩码的突触潜值为零，因而 trit 为零 —— 打包产物不需要额外的掩码
-文件）；absmean 缩放只对*已布线*的突触计算，稀疏回路的零不会稀释
-缩放因子。一次运行训练四个模型（对应 ncps 的 sinusoidal 示例）：
+的倍频正弦。有两个设计使布线在量化后仍然有效：稀疏性直接编码于
+trit 取值（被掩码的突触潜值为零，因而 trit 为零 —— 打包产物不需要
+额外的掩码文件）；absmean 缩放只对已布线的突触计算，未布线突触的
+零值不参与缩放因子计算。一次运行训练四个模型（对应 ncps 的
+sinusoidal 示例）：
 
 | 模型 | 参数 | fp32 验证 MSE | ptq 验证 | qat 验证 | qat 恢复 | 打包 |
 | --- | --- | --- | --- | --- | --- | --- |
-| CfC(2→32, backbone 64, proj 1) | 14,689 | 0.000520 | 0.448876 | 0.007895 | 98.4% | 3,779 B（比 fp32 小 15.5x）|
-| WiredCfC + FullyConnected(8, out 1) | 352 | 0.002416 | 0.354496 | 0.029022 | 92.4% | 280 B（5.0x）|
-| WiredCfC + NCP(16 inter, 8 cmd, 1 motor) | 2,056 | 0.001180 | 0.514103 | 0.019580 | 96.4% | 964 B（8.5x）|
+| CfC(2→32, backbone 64, proj 1) | 14,689 | 0.000520 | 0.448876 | 0.007895 | 98.4% | 3,779 B（压缩 15.5 倍）|
+| WiredCfC + FullyConnected(8, out 1) | 352 | 0.002416 | 0.354496 | 0.029022 | 92.4% | 280 B（压缩 5.0 倍）|
+| WiredCfC + NCP(16 inter, 8 cmd, 1 motor) | 2,056 | 0.001180 | 0.514103 | 0.019580 | 96.4% | 964 B（压缩 8.5 倍）|
 | LTC + NCP(16 inter, 8 cmd, 1 motor) | 2,781 | 0.000815 | 0.544995 | 0.001454 | 99.9% | 8,623 B |
 
-Ryzen 9 7940H 实测（1,600 条序列，80/20 划分，共约 4.5 分钟）。液态
-细胞是全场明星：朴素 PTQ 让它的 MSE 恶化到 0.545 —— 连续时间动力学
-对三元化非常脆弱 —— 但 QAT 收回了 99.9% 的差距，最终 0.001454，比
-同规模布线 CfC 好约 13 倍，同时以 ODE 内核在 2.8 ms 内跑完一次 48 步
-推理。（LTC 的打包只比 fp32 小 1.3x，因为它的大部分参数是 fp32 的
-ODE 物理参数 —— 只有 675 个突触强度是三元的。）所有打包产物均无损
-往返；在与 ncps 示例完全相同的输入序列上，部署权重下的 QAT CfC 以
-0.000603 MSE 跟踪倍频正弦。
+Ryzen 9 7940H 实测（1,600 条序列，80/20 划分，共约 4.5 分钟）。四个
+模型中，LTC 受三元化影响最大：朴素 PTQ 使其 MSE 恶化至 0.545，
+连续时间动力学对三元化敏感；QAT 恢复了 99.9% 的差距，最终 MSE 为
+0.001454，约为同规模布线 CfC 的 1/13，同时以 ODE 内核在 2.8 ms 内
+完成一次 48 步推理。（LTC 的打包压缩比仅为 1.3：其大部分参数为
+fp32 的 ODE 物理参数，仅 675 个突触强度为三元。）所有打包产物均
+无损往返；在与 ncps 示例完全相同的输入序列上，部署权重下的 QAT CfC
+以 0.000603 MSE 跟踪倍频正弦。
 
-与参考实现的刻意差异（记录在 `examples/liquid_sine.zig`，是有意为之
-而非疏漏）：布线 RNG 采用框架的 xorshift、按布线实例播种（构造算法
-相同，具体突触选择不同）；权重用 Xavier-Gauss 初始化；未布线的骨干
-为 64 单元而非 128；mixed_memory（fp32 LSTM 增强）未移植。
+与参考实现的差异（记录在 `examples/liquid_sine.zig`，均为有意设计）：
+布线 RNG 采用框架的 xorshift、按布线实例播种（构造算法相同，具体
+突触选择不同）；权重用 Xavier-Gauss 初始化；未布线骨干为 64 单元
+（参考实现为 128）；mixed_memory（fp32 LSTM 增强）未移植。
 
 ```bash
 zig build --release=fast example-ncps   # 写出 modeldata/ncps_{cfc,fc,ncp,ltc}_packed.bin + ncps_valset.bin
 make ncps-check                         # 对全部四个产物做 C 部署校验
 ```
 
-## 部署腿：C 引擎
+## C 部署引擎
 
-`c/` 是相互独立的 C 部署引擎 —— 它们加载打包模型和导出的验证集，
-解码 trit 后以加/跳过/减（add/skip/subtract）方式运行模型 —— 不需要
-逐权重的浮点表 —— 然后重新推导训练器的验证指标并比对：
+`c/` 是相互独立的 C 部署引擎 —— 引擎加载打包模型和导出的验证集，
+解码 trit 后以加/跳过/减（add/skip/subtract）方式运行模型，不使用
+逐权重的浮点表，然后重新计算训练器的验证指标并比对：
 
 ```bash
 make cnn-c         # cnn1d-c：CNN 的准确率 + 混淆矩阵一致性
 make ncps-check    # ncps-c：全部四个 CfC/LTC 产物的 val-MSE 一致性
-make deploy-check  # 两者都跑
+make deploy-check  # 两者均执行
 ```
 
-每个引擎都必须精确报出训练器的数字；不一致则构建目标失败。
+每个引擎的输出指标必须与训练器一致；不一致时构建目标失败。
 
 ## fp32 基线
 
-`src/fp32.zig`（及其 C 孪生 `c/microgpt.c`）是框架 fp32 预训练腿的
+`src/fp32.zig`（及对应的 C 实现 `c/microgpt.c`）是 fp32 预训练路径的
 对照参考 —— 最初的 microGPT，仅 fp32，在同一份人名数据上训练。训练
 与推理使用两条独立的前向路径 —— `gpt_forward` 为反向传播保存激活，
 `gpt_forward_infer` 是专用的单 token 路径，logits 与之相差不超过 fp32
