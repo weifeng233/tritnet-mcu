@@ -1,19 +1,21 @@
-//! TritNet-MCU: full ternary pipeline in pure Zig.
+//! Example: char-level micro-GPT on names.txt, driven by the TritNet-MCU
+//! framework (src/framework.zig).
 //!
-//! Project home: the tritnetmcu build artifact. The network itself is the
-//! tiny char-level GPT (microGPT) carried over from the fp32 baseline.
-//!
-//! Pipeline (single binary, no dependencies beyond libc):
-//!   1. fp32 pretrain        -- identical math to src/microgpt.zig
-//!   2. BitNet QAT           -- ternary {-1,0,+1} weights via STE, absmean
-//!                              per-tensor scales, per-token 8-bit activations
+//! The flagship walkthrough of the train -> quantize -> deploy pipeline:
+//! a tiny char-level transformer (microGPT) that trains on ~32k names and
+//! generates new ones, single binary, no dependencies beyond libc:
+//!   1. fp32 pretrain        -- Adam + cosine schedule, SIMD kernels
+//!   2. BitNet QAT           -- ternary {-1,0,+1} weights via the straight-
+//!                              through estimator (framework/quant.zig)
 //!   3. validation           -- held-out loss for fp32 / PTQ / QAT, samples
-//!   4. ternary packing      -- 5 trits per byte (compilade.net scheme), the
-//!                              same packing llama.cpp uses for BitNet weights
+//!   4. ternary packing      -- 5 trits per byte (framework/ternary.zig),
+//!                              the same packing llama.cpp uses for BitNet
 //!   5. round-trip check     -- reload the packed file, unpack, re-evaluate;
 //!                              the loss must match the pre-export model exactly
 //!
-//! Weight quantizer (BitNet b1.58 style):
+//! The model math (forward, backward, the specialized inference path) lives
+//! here; the framework supplies the RNG, the quantizer, the optimizer, the
+//! clock and the packed-file container. Quantization semantics:
 //!   scale = mean(|W|) per tensor
 //!   trit  = W > scale/2 ? +1 : W < -scale/2 ? -1 : 0
 //!   deployed weight = scale * trit
@@ -21,9 +23,7 @@
 //! |W| < scale (mirrors bitnet_gpt_train.py).
 
 const std = @import("std");
-const builtin = @import("builtin");
-const math = std.math;
-const ternary = @import("ternary.zig");
+const fw = @import("framework");
 
 const clib = @cImport({
     @cInclude("stdio.h");
@@ -31,15 +31,6 @@ const clib = @cImport({
     @cInclude("string.h");
     @cInclude("math.h");
 });
-const winclib = if (builtin.os.tag == .windows) @cImport({
-    @cInclude("windows.h");
-}) else struct {};
-const timeclib = if (builtin.os.tag != .windows) @cImport({
-    @cInclude("time.h");
-}) else struct {};
-
-const is_x86 = builtin.cpu.arch == .x86_64;
-const is_aarch64 = builtin.cpu.arch == .aarch64;
 
 const MAX_DOCS = 85000;
 const MAX_DOC_LEN = 512;
@@ -67,31 +58,14 @@ var vocab_size: usize = 0;
 var BOS: usize = 0;
 var lm_pad: usize = LM_PAD_MAX;
 
-var rng_state: u64 = 42;
-
-inline fn rng_next() u64 {
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 7;
-    rng_state ^= rng_state << 17;
-    return rng_state;
-}
-
-inline fn rng_uniform() f64 {
-    return @as(f64, @floatFromInt(rng_next() >> 11)) * (1.0 / 9007199254740992.0);
-}
-
-inline fn rng_gauss(mean: f32, stddev: f32) f32 {
-    var uu1 = rng_uniform();
-    const uu2 = rng_uniform();
-    if (uu1 < 1e-30) uu1 = 1e-30;
-    return mean + stddev * @as(f32, @floatCast(math.sqrt(-2.0 * @log(uu1)) * @cos(2.0 * math.pi * uu2)));
-}
+// deterministic stream, seeded in main(); every draw is reproducible
+const rng = fw.rng;
 
 fn shuffle_ints(arr: []i32) void {
     var i: usize = arr.len;
     while (i > 1) {
         i -= 1;
-        const j: usize = @intFromFloat(rng_uniform() * @as(f64, @floatFromInt(i + 1)));
+        const j: usize = @intFromFloat(rng.uniform() * @as(f64, @floatFromInt(i + 1)));
         const tmp = arr[i];
         arr[i] = arr[j];
         arr[j] = tmp;
@@ -222,7 +196,7 @@ fn make_param(size: usize, stddev: f32) []f32 {
         clib.exit(1);
         unreachable;
     };
-    for (0..size) |i| p[i] = rng_gauss(0, stddev);
+    for (0..size) |i| p[i] = rng.gauss(0, stddev);
     num_params += size;
     return p;
 }
@@ -285,32 +259,15 @@ fn init_params() void {
 }
 
 // ---------------------------------------------------------------------------
-// BitNet ternary quantization
+// BitNet ternary quantization (framework/quant.zig)
 // ---------------------------------------------------------------------------
-
-const TernInfo = struct { t: f32, scale: f32 };
 
 var trits_scratch: [MLP_DIM * N_EMBD]i8 = undefined;
 
-/// Quantize a weight matrix to trits with an absmean scale.
-fn quant_trits(w: []const f32, trits: []i8) TernInfo {
-    var sum: f32 = 0;
-    for (w) |x| sum += @abs(x);
-    const scale = sum / @as(f32, @floatFromInt(w.len));
-    const t = 0.5 * scale;
-    for (w, trits) |x, *q| {
-        q.* = if (x > t) 1 else if (x < -t) -1 else 0;
-    }
-    return .{ .t = t, .scale = scale };
-}
-
-/// Fill the quantized weight table (scale * trit) for one matrix, return t.
+/// Ternarize one matrix into trits + deployed table; returns the STE
+/// threshold t = scale/2 for the gradient mask.
 fn ternarize(w: []const f32, qw: []f32) f32 {
-    const info = quant_trits(w, trits_scratch[0..w.len]);
-    for (qw, trits_scratch[0..w.len]) |*q, tr| {
-        q.* = @as(f32, @floatFromInt(tr)) * info.scale;
-    }
-    return info.t;
+    return fw.quant.ternarize(w, qw, trits_scratch[0..w.len]).t;
 }
 
 fn ternarize_all() void {
@@ -327,22 +284,16 @@ fn ternarize_all() void {
 
 /// Straight-through estimator mask: zero gradients where |W| >= 2*t,
 /// matching bitnet_gpt_train.py's `mask = |w| < 2*threshold`.
-fn mask_grads(w: []const f32, d: []f32, t: f32) void {
-    for (w, d) |x, *g| {
-        if (!(@abs(x) < 2 * t)) g.* = 0;
-    }
-}
-
 fn mask_all_grads() void {
     for (0..N_LAYER) |li| {
-        mask_grads(attn_wq[li], d_attn_wq[li], tern_t[li][0]);
-        mask_grads(attn_wk[li], d_attn_wk[li], tern_t[li][1]);
-        mask_grads(attn_wv[li], d_attn_wv[li], tern_t[li][2]);
-        mask_grads(attn_wo[li], d_attn_wo[li], tern_t[li][3]);
-        mask_grads(mlp_fc1[li], d_mlp_fc1[li], tern_t[li][4]);
-        mask_grads(mlp_fc2[li], d_mlp_fc2[li], tern_t[li][5]);
+        fw.quant.maskGrads(attn_wq[li], d_attn_wq[li], tern_t[li][0]);
+        fw.quant.maskGrads(attn_wk[li], d_attn_wk[li], tern_t[li][1]);
+        fw.quant.maskGrads(attn_wv[li], d_attn_wv[li], tern_t[li][2]);
+        fw.quant.maskGrads(attn_wo[li], d_attn_wo[li], tern_t[li][3]);
+        fw.quant.maskGrads(mlp_fc1[li], d_mlp_fc1[li], tern_t[li][4]);
+        fw.quant.maskGrads(mlp_fc2[li], d_mlp_fc2[li], tern_t[li][5]);
     }
-    mask_grads(lm_head, d_lm_head, tern_t_lm);
+    fw.quant.maskGrads(lm_head, d_lm_head, tern_t_lm);
 }
 
 // forward/backward mode flags:
@@ -356,21 +307,8 @@ inline fn TW(w: []f32, qw: []const f32) []const f32 {
     return if (weights_q) qw else w;
 }
 
-inline fn act_quant8(v: []f32) void {
-    var m: f32 = 1e-5;
-    for (v) |x| {
-        const a = @abs(x);
-        if (a > m) m = a;
-    }
-    const s: f32 = 127.0 / m;
-    for (v) |*x| {
-        // |x| <= m so the round lands inside int8 range; STE backward is identity
-        x.* = @round(x.* * s) / s;
-    }
-}
-
 inline fn AQ(v: []f32) void {
-    if (act_q) act_quant8(v);
+    if (act_q) fw.quant.actQuant8(v);
 }
 
 // ---------------------------------------------------------------------------
@@ -811,42 +749,8 @@ fn gpt_backward(n: usize, tokens: []const i32, targets: []const i32) void {
 }
 
 // ---------------------------------------------------------------------------
-// optimizer
+// optimizer (framework/adam.zig)
 // ---------------------------------------------------------------------------
-
-fn adam_update(p: []f32, g: []f32, m: []f32, v: []f32, lr: f32, b1: f32, b2: f32, eps: f32, b1c: f32, b2c: f32, gscale: f32) void {
-    const vb1: Vec8 = @splat(b1);
-    const vc1: Vec8 = @splat(1 - b1);
-    const vb2: Vec8 = @splat(b2);
-    const vc2: Vec8 = @splat(1 - b2);
-    const vb1c: Vec8 = @splat(b1c);
-    const vb2c: Vec8 = @splat(b2c);
-    const veps: Vec8 = @splat(eps);
-    const vlr: Vec8 = @splat(lr);
-    const vgs: Vec8 = @splat(gscale);
-    const n = p.len;
-    var i: usize = 0;
-    while (i + 8 <= n) : (i += 8) {
-        const gv: Vec8 = @as(*const [8]f32, @ptrCast(g[i..][0..8])).* * vgs;
-        var mv: Vec8 = @as(*const [8]f32, @ptrCast(m[i..][0..8])).*;
-        var vv: Vec8 = @as(*const [8]f32, @ptrCast(v[i..][0..8])).*;
-        mv = mv * vb1 + gv * vc1;
-        vv = vv * vb2 + gv * gv * vc2;
-        @as(*[8]f32, @ptrCast(m[i..][0..8])).* = mv;
-        @as(*[8]f32, @ptrCast(v[i..][0..8])).* = vv;
-        const upd = (vlr * (mv / vb1c)) / (@sqrt(vv / vb2c) + veps);
-        const pv: Vec8 = @as(*const [8]f32, @ptrCast(p[i..][0..8])).*;
-        @as(*[8]f32, @ptrCast(p[i..][0..8])).* = pv - upd;
-        @as(*[8]f32, @ptrCast(g[i..][0..8])).* = @splat(0);
-    }
-    while (i < n) : (i += 1) {
-        const gs = g[i] * gscale;
-        m[i] = b1 * m[i] + (1 - b1) * gs;
-        v[i] = b2 * v[i] + (1 - b2) * gs * gs;
-        p[i] -= lr * (m[i] / b1c) / (@sqrt(v[i] / b2c) + eps);
-        g[i] = 0;
-    }
-}
 
 fn reset_adam() void {
     const es = vocab_size * N_EMBD;
@@ -876,7 +780,7 @@ fn reset_adam() void {
 }
 
 // ---------------------------------------------------------------------------
-// fast packed inference path (from microgpt.zig, unchanged math)
+// fast packed inference path (carried over from the fp32 baseline, unchanged math)
 // ---------------------------------------------------------------------------
 
 var iw_q: [N_LAYER][N_EMBD * N_EMBD]f32 align(64) = [_][N_EMBD * N_EMBD]f32{[_]f32{0} ** (N_EMBD * N_EMBD)} ** N_LAYER;
@@ -945,7 +849,7 @@ fn sample_logits(logits: []f32, n: usize, npad: usize, inv_t: f32) usize {
         s0 += e0;
     }
     const sum: f32 = hsum4(s0 + s1) - @as(f32, @floatFromInt(npad - n)) * p[0];
-    const r: f32 = @as(f32, @floatCast(rng_uniform())) * sum;
+    const r: f32 = @as(f32, @floatCast(rng.uniform())) * sum;
     var cum: f32 = 0;
     for (0..n) |k| {
         cum += p[k];
@@ -1344,20 +1248,6 @@ fn gpt_forward_infer(token_id: usize, pos_id: usize, logits_out: []f32) void {
     }
 }
 
-fn now_s() f64 {
-    if (builtin.os.tag == .windows) {
-        var freq: winclib.LARGE_INTEGER = undefined;
-        var cnt: winclib.LARGE_INTEGER = undefined;
-        _ = winclib.QueryPerformanceFrequency(&freq);
-        _ = winclib.QueryPerformanceCounter(&cnt);
-        return @as(f64, @floatFromInt(cnt.QuadPart)) / @as(f64, @floatFromInt(freq.QuadPart));
-    } else {
-        var ts: timeclib.timespec = undefined;
-        _ = timeclib.clock_gettime(timeclib.CLOCK_MONOTONIC, &ts);
-        return @as(f64, @floatFromInt(ts.tv_sec)) + @as(f64, @floatFromInt(ts.tv_nsec)) * 1e-9;
-    }
-}
-
 inline fn sumsq_acc(acc: *Vec8, s: []const f32) void {
     var i: usize = 0;
     while (i + 8 <= s.len) : (i += 8) {
@@ -1408,12 +1298,9 @@ fn eval_docs(begin: usize, count: usize) f64 {
 fn train_phase(comptime qat: bool, steps: usize, lr: f32, running_loss_init: f32) void {
     weights_q = qat;
     act_q = qat;
-    const b1: f32 = 0.9;
-    const b2: f32 = 0.999;
-    const eps: f32 = 1e-8;
     var running_loss: f32 = running_loss_init;
 
-    const t0 = now_s();
+    const t0 = fw.timing.nowS();
     for (0..steps) |step| {
         if (qat) ternarize_all();
 
@@ -1463,24 +1350,22 @@ fn train_phase(comptime qat: bool, steps: usize, lr: f32, running_loss_init: f32
             grad_clip = if (gnorm > 1.0) 1.0 / gnorm else 1.0;
         }
 
-        const lr_t: f32 = lr * 0.5 * (1.0 + @cos(@as(f32, @floatCast(math.pi * @as(f64, @floatFromInt(step)) / @as(f64, @floatFromInt(steps))))));
-        const stepf: f32 = @as(f32, @floatFromInt(step + 1));
-        const b1c: f32 = 1.0 - math.pow(f32, b1, stepf);
-        const b2c: f32 = 1.0 - math.pow(f32, b2, stepf);
+        const lr_t = fw.adam.cosineLr(lr, step, steps);
+        const bc = fw.adam.biasCorr(step);
         const es = vocab_size * N_EMBD;
         const ps = BLOCK_SIZE * N_EMBD;
         const as = N_EMBD * N_EMBD;
         const ms = MLP_DIM * N_EMBD;
-        adam_update(wte[0..es], d_wte[0..es], adam_m_wte[0..es], adam_v_wte[0..es], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-        adam_update(wpe[0..ps], d_wpe[0..ps], adam_m_wpe[0..ps], adam_v_wpe[0..ps], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-        adam_update(lm_head[0..es], d_lm_head[0..es], adam_m_lm[0..es], adam_v_lm[0..es], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
+        fw.adam.update(wte[0..es], d_wte[0..es], adam_m_wte[0..es], adam_v_wte[0..es], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+        fw.adam.update(wpe[0..ps], d_wpe[0..ps], adam_m_wpe[0..ps], adam_v_wpe[0..ps], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+        fw.adam.update(lm_head[0..es], d_lm_head[0..es], adam_m_lm[0..es], adam_v_lm[0..es], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
         for (0..N_LAYER) |i| {
-            adam_update(attn_wq[i][0..as], d_attn_wq[i][0..as], adam_m_wq[i][0..as], adam_v_wq[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(attn_wk[i][0..as], d_attn_wk[i][0..as], adam_m_wk[i][0..as], adam_v_wk[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(attn_wv[i][0..as], d_attn_wv[i][0..as], adam_m_wv[i][0..as], adam_v_wv[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(attn_wo[i][0..as], d_attn_wo[i][0..as], adam_m_wo[i][0..as], adam_v_wo[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(mlp_fc1[i][0..ms], d_mlp_fc1[i][0..ms], adam_m_fc1[i][0..ms], adam_v_fc1[i][0..ms], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(mlp_fc2[i][0..ms], d_mlp_fc2[i][0..ms], adam_m_fc2[i][0..ms], adam_v_fc2[i][0..ms], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
+            fw.adam.update(attn_wq[i][0..as], d_attn_wq[i][0..as], adam_m_wq[i][0..as], adam_v_wq[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(attn_wk[i][0..as], d_attn_wk[i][0..as], adam_m_wk[i][0..as], adam_v_wk[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(attn_wv[i][0..as], d_attn_wv[i][0..as], adam_m_wv[i][0..as], adam_v_wv[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(attn_wo[i][0..as], d_attn_wo[i][0..as], adam_m_wo[i][0..as], adam_v_wo[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(mlp_fc1[i][0..ms], d_mlp_fc1[i][0..ms], adam_m_fc1[i][0..ms], adam_v_fc1[i][0..ms], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(mlp_fc2[i][0..ms], d_mlp_fc2[i][0..ms], adam_m_fc2[i][0..ms], adam_v_fc2[i][0..ms], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
         }
 
         running_loss = running_loss * 0.99 + loss * 0.01;
@@ -1488,7 +1373,7 @@ fn train_phase(comptime qat: bool, steps: usize, lr: f32, running_loss_init: f32
             _ = clib.printf("step %4d / %4d | loss %.4f  (avg %.4f)\n", @as(c_int, @intCast(step + 1)), @as(c_int, @intCast(steps)), @as(f64, loss), @as(f64, running_loss));
         }
     }
-    const elapsed = now_s() - t0;
+    const elapsed = fw.timing.nowS() - t0;
     const name: []const u8 = if (qat) "qat " else "fp32";
     _ = clib.printf("%s train: %.3f s  (%.0f steps/sec)\n", @as([*]const u8, @ptrCast(name.ptr)), elapsed, @as(f64, @floatFromInt(steps)) / elapsed);
 }
@@ -1527,98 +1412,47 @@ fn sample_names(n_samples: usize, temperature: f32) void {
 }
 
 // ---------------------------------------------------------------------------
-// ternary-packed model file
+// ternary-packed model file (framework/packed_model.zig)
 // ---------------------------------------------------------------------------
 
 const FILE_BUF = 1 << 16;
 
-fn put_u32(buf: []u8, cur: *usize, v: u32) void {
-    std.mem.writeInt(u32, buf[cur.*..][0..4], v, .little);
-    cur.* += 4;
-}
-
-fn put_f32(buf: []u8, cur: *usize, v: f32) void {
-    std.mem.writeInt(u32, buf[cur.*..][0..4], @bitCast(v), .little);
-    cur.* += 4;
-}
-
-fn put_f32_arr(buf: []u8, cur: *usize, s: []const f32) void {
-    for (s) |v| put_f32(buf, cur, v);
-}
-
-fn put_bytes(buf: []u8, cur: *usize, s: []const u8) void {
-    @memcpy(buf[cur.*..][0..s.len], s);
-    cur.* += s.len;
-}
-
-/// One ternary matrix: ternarize, pack, append (scale, nbytes, bytes).
-fn put_ternary_matrix(buf: []u8, cur: *usize, w: []const f32, trits: []i8, packed_bytes: []u8) void {
-    const info = quant_trits(w, trits);
-    const ngroups = ternary.packed_len(w.len);
-    ternary.pack5(packed_bytes[0..ngroups], trits);
-    put_f32(buf, cur, info.scale);
-    put_u32(buf, cur, @intCast(ngroups));
-    put_bytes(buf, cur, packed_bytes[0..ngroups]);
-}
-
 fn export_packed_model(io: std.Io, path: []const u8) !void {
     var buf: [FILE_BUF]u8 = undefined;
     var cur: usize = 0;
-    var pk: [MLP_DIM * N_EMBD / ternary.TRITS_PER_BYTE + 1]u8 = undefined;
+    const w = &fw.packed_model;
 
-    put_bytes(buf[0..], &cur, MAGIC);
-    put_u32(buf[0..], &cur, @intCast(N_EMBD));
-    put_u32(buf[0..], &cur, @intCast(N_HEAD));
-    put_u32(buf[0..], &cur, @intCast(N_LAYER));
-    put_u32(buf[0..], &cur, @intCast(BLOCK_SIZE));
-    put_u32(buf[0..], &cur, @intCast(MLP_DIM));
-    put_u32(buf[0..], &cur, @intCast(vocab_size));
-    put_u32(buf[0..], &cur, @intCast(BOS));
-    put_u32(buf[0..], &cur, @intCast(num_uchars));
-    put_bytes(buf[0..], &cur, uchars_arr[0..num_uchars]);
-    put_f32_arr(buf[0..], &cur, wte);
-    put_f32_arr(buf[0..], &cur, wpe);
+    w.putBytes(buf[0..], &cur, MAGIC);
+    w.putU32(buf[0..], &cur, @intCast(N_EMBD));
+    w.putU32(buf[0..], &cur, @intCast(N_HEAD));
+    w.putU32(buf[0..], &cur, @intCast(N_LAYER));
+    w.putU32(buf[0..], &cur, @intCast(BLOCK_SIZE));
+    w.putU32(buf[0..], &cur, @intCast(MLP_DIM));
+    w.putU32(buf[0..], &cur, @intCast(vocab_size));
+    w.putU32(buf[0..], &cur, @intCast(BOS));
+    w.putU32(buf[0..], &cur, @intCast(num_uchars));
+    w.putBytes(buf[0..], &cur, uchars_arr[0..num_uchars]);
+    w.putF32Arr(buf[0..], &cur, wte);
+    w.putF32Arr(buf[0..], &cur, wpe);
     for (0..N_LAYER) |li| {
-        put_ternary_matrix(buf[0..], &cur, attn_wq[li], trits_scratch[0..attn_wq[li].len], pk[0..]);
-        put_ternary_matrix(buf[0..], &cur, attn_wk[li], trits_scratch[0..attn_wk[li].len], pk[0..]);
-        put_ternary_matrix(buf[0..], &cur, attn_wv[li], trits_scratch[0..attn_wv[li].len], pk[0..]);
-        put_ternary_matrix(buf[0..], &cur, attn_wo[li], trits_scratch[0..attn_wo[li].len], pk[0..]);
-        put_ternary_matrix(buf[0..], &cur, mlp_fc1[li], trits_scratch[0..mlp_fc1[li].len], pk[0..]);
-        put_ternary_matrix(buf[0..], &cur, mlp_fc2[li], trits_scratch[0..mlp_fc2[li].len], pk[0..]);
+        w.putTernaryMatrix(buf[0..], &cur, attn_wq[li], null, trits_scratch[0..attn_wq[li].len]);
+        w.putTernaryMatrix(buf[0..], &cur, attn_wk[li], null, trits_scratch[0..attn_wk[li].len]);
+        w.putTernaryMatrix(buf[0..], &cur, attn_wv[li], null, trits_scratch[0..attn_wv[li].len]);
+        w.putTernaryMatrix(buf[0..], &cur, attn_wo[li], null, trits_scratch[0..attn_wo[li].len]);
+        w.putTernaryMatrix(buf[0..], &cur, mlp_fc1[li], null, trits_scratch[0..mlp_fc1[li].len]);
+        w.putTernaryMatrix(buf[0..], &cur, mlp_fc2[li], null, trits_scratch[0..mlp_fc2[li].len]);
     }
-    put_ternary_matrix(buf[0..], &cur, lm_head, trits_scratch[0..lm_head.len], pk[0..]);
+    w.putTernaryMatrix(buf[0..], &cur, lm_head, null, trits_scratch[0..lm_head.len]);
 
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = buf[0..cur] });
 }
-
-const Reader = struct {
-    data: []const u8,
-    pos: usize = 0,
-
-    fn take(self: *Reader, n: usize) ?[]const u8 {
-        if (self.pos + n > self.data.len) return null;
-        const s = self.data[self.pos .. self.pos + n];
-        self.pos += n;
-        return s;
-    }
-
-    fn u32le(self: *Reader) ?u32 {
-        const s = self.take(4) orelse return null;
-        return std.mem.readInt(u32, s[0..4], .little);
-    }
-
-    fn f32le(self: *Reader) ?f32 {
-        const v = self.u32le() orelse return null;
-        return @bitCast(v);
-    }
-};
 
 /// Read a packed model file back and rebuild the ternary tables (qw_*).
 /// Leaves weights_q untouched; caller decides which tables to use.
 fn load_packed_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize {
     const data = try std.Io.Dir.cwd().readFileAlloc(io, path, alloc, .limited(FILE_BUF));
     defer alloc.free(data);
-    var r = Reader{ .data = data };
+    var r = fw.packed_model.Reader{ .data = data };
 
     const magic = r.take(MAGIC.len) orelse return error.Truncated;
     if (!std.mem.eql(u8, magic, MAGIC)) return error.BadMagic;
@@ -1653,25 +1487,11 @@ fn load_packed_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !us
             .{ .w = mlp_fc2[li], .q = qw_fc2[li][0..] },
         };
         for (mats) |m| {
-            trit_total += try load_one_matrix(&r, m.w.len, m.q);
+            trit_total += try fw.packed_model.readMatrix(&r, m.w.len, m.q, alloc);
         }
     }
-    trit_total += try load_one_matrix(&r, lm_head.len, qw_lm);
+    trit_total += try fw.packed_model.readMatrix(&r, lm_head.len, qw_lm, alloc);
     return trit_total;
-}
-
-fn load_one_matrix(r: *Reader, n: usize, qw: []f32) !usize {
-    const scale = r.f32le() orelse return error.Truncated;
-    const nbytes = r.u32le() orelse return error.Truncated;
-    if (nbytes != ternary.packed_len(n)) return error.BadMatrixSize;
-    const bytes = r.take(nbytes) orelse return error.Truncated;
-    const trits = try gpa.alloc(i8, n);
-    defer gpa.free(trits);
-    ternary.unpack5(trits, bytes);
-    for (qw, trits) |*q, t| {
-        q.* = @as(f32, @floatFromInt(t)) * scale;
-    }
-    return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -1679,6 +1499,8 @@ fn load_one_matrix(r: *Reader, n: usize, qw: []f32) !usize {
 // ---------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) u8 {
+    // this example's fixed RNG stream: identical runs on every machine
+    rng.state = 42;
     var data_path: []const u8 = "data/names.txt";
     var pre_steps: usize = 20000;
     var qat_steps: usize = 5000;
@@ -1748,13 +1570,9 @@ pub fn main(init: std.process.Init) u8 {
         var tr: [MLP_DIM * N_EMBD]i8 = undefined;
         for (0..N_LAYER) |li| {
             const mats = [_][]const f32{ attn_wq[li], attn_wk[li], attn_wv[li], attn_wo[li], mlp_fc1[li], mlp_fc2[li] };
-            for (mats) |m| {
-                _ = quant_trits(m, tr[0..m.len]);
-                for (tr[0..m.len]) |t| hist[@intCast(t + 1)] += 1;
-            }
+            for (mats) |m| fw.quant.histTrits(m, tr[0..m.len], &hist);
         }
-        _ = quant_trits(lm_head, tr[0..lm_head.len]);
-        for (tr[0..lm_head.len]) |t| hist[@intCast(t + 1)] += 1;
+        fw.quant.histTrits(lm_head, tr[0..lm_head.len], &hist);
     }
     const tern_total = hist[0] + hist[1] + hist[2];
     _ = clib.printf("  trits: -1 %.1f%%   0 %.1f%%   +1 %.1f%%\n", 100.0 * @as(f64, @floatFromInt(hist[0])) / @as(f64, @floatFromInt(tern_total)), 100.0 * @as(f64, @floatFromInt(hist[1])) / @as(f64, @floatFromInt(tern_total)), 100.0 * @as(f64, @floatFromInt(hist[2])) / @as(f64, @floatFromInt(tern_total)));

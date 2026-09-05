@@ -1,9 +1,10 @@
-//! TritNet-MCU 1D-CNN: a TinyML-style ternary sensor classifier in pure Zig.
+//! Example: TinyML 1D-CNN gesture classifier, driven by the TritNet-MCU
+//! framework (src/framework.zig).
 //!
-//! The workload is the canonical TinyML 1D-CNN task (EdgeImpulse / MLPerf-Tiny
-//! flavor): classify short windows of 3-axis accelerometer data into gesture
-//! classes. The dataset is a deterministic synthetic generator, so the whole
-//! pipeline is reproducible from a fixed seed with no external downloads:
+//! The canonical TinyML workload (EdgeImpulse / MLPerf-Tiny flavor): classify
+//! short windows of 3-axis accelerometer data into gesture classes. The
+//! dataset is a deterministic synthetic generator, so the whole pipeline is
+//! reproducible from a fixed seed with no external downloads:
 //!
 //!   0 "rest"    slow low-amplitude drift on all axes
 //!   1 "shake"   fast x-axis oscillation (8-12 cycles per window)
@@ -16,10 +17,12 @@
 //!   Conv1D(8 -> 16, k=4) + ReLU + MaxPool(2)   -> 16x28
 //!   Flatten -> Dense(448 -> 4) + softmax
 //!
-//! Pipeline (mirrors src/tritnet.zig, single binary, no deps beyond libc):
+//! The pipeline is the framework's standard one, single binary, no deps
+//! beyond libc:
 //!   1. fp32 pretrain     -- Adam + cosine schedule, mini-batch cross-entropy
-//!   2. BitNet ternary QAT -- absmean scales, straight-through estimator,
-//!                           gradient mask |W| >= 2t, 8-bit activation quant
+//!   2. BitNet ternary QAT -- framework/quant.zig: absmean scales, straight-
+//!                           through estimator, gradient mask |W| >= 2t,
+//!                           8-bit activation quant
 //!   3. verification      -- accuracy + confusion matrix for fp32 / PTQ / QAT,
 //!                           latency + MACs, ternary storage accounting
 //!   4. packed export     -- 5 trits per byte, plus the val split for the C
@@ -27,27 +30,20 @@
 //!   5. round-trip check  -- reload the packed file, re-evaluate; accuracy must
 //!                           match the pre-export model exactly
 //!
-//! Quantization semantics are identical to the micro-GPT pipeline: conv
-//! kernels and the dense kernel are ternary {-1,0,+1} with per-tensor absmean
+//! Quantization semantics are identical across all examples: conv kernels
+//! and the dense kernel are ternary {-1,0,+1} with per-tensor absmean
 //! scales; biases stay fp32 (they are 28 of 2,524 parameters and exist
 //! precisely to absorb what the ternary grid cannot express).
 
 const std = @import("std");
-const builtin = @import("builtin");
 const math = std.math;
-const ternary = @import("ternary.zig");
+const fw = @import("framework");
 
 const clib = @cImport({
     @cInclude("stdio.h");
     @cInclude("stdlib.h");
     @cInclude("math.h");
 });
-const winclib = if (builtin.os.tag == .windows) @cImport({
-    @cInclude("windows.h");
-}) else struct {};
-const timeclib = if (builtin.os.tag != .windows) @cImport({
-    @cInclude("time.h");
-}) else struct {};
 
 // ---------------------------------------------------------------------------
 // dimensions
@@ -81,32 +77,10 @@ const VALSET_MAGIC = "CNN1V001";
 const class_names = [4][]const u8{ "rest", "shake", "circle", "tap" };
 
 // ---------------------------------------------------------------------------
-// deterministic RNG (same xorshift family as tritnet.zig, own stream)
+// deterministic RNG (framework/rng.zig, this example's own stream)
 // ---------------------------------------------------------------------------
 
-var rng_state: u64 = 0x7EED_1DCA_2026_0001;
-
-inline fn rng_next() u64 {
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 7;
-    rng_state ^= rng_state << 17;
-    return rng_state;
-}
-
-inline fn rng_uniform() f64 {
-    return @as(f64, @floatFromInt(rng_next() >> 11)) * (1.0 / 9007199254740992.0);
-}
-
-inline fn rng_gauss(mean: f32, stddev: f32) f32 {
-    var uu1 = rng_uniform();
-    const uu2 = rng_uniform();
-    if (uu1 < 1e-30) uu1 = 1e-30;
-    return mean + stddev * @as(f32, @floatCast(math.sqrt(-2.0 * @log(uu1)) * @cos(2.0 * math.pi * uu2)));
-}
-
-inline fn rng_range(lo: f32, hi: f32) f32 {
-    return lo + @as(f32, @floatCast(rng_uniform())) * (hi - lo);
-}
+const rng = fw.rng;
 
 // ---------------------------------------------------------------------------
 // synthetic dataset
@@ -127,15 +101,15 @@ fn gen_sample(class: usize, out: []f32) void {
     const x = out[0..T0];
     const y = out[T0 .. 2 * T0];
     const z = out[2 * T0 .. 3 * T0];
-    const phase = rng_range(0, 2 * math.pi);
-    const amp: f32 = rng_range(0.8, 1.2);
+    const phase = rng.range(0, 2 * math.pi);
+    const amp: f32 = rng.range(0.8, 1.2);
 
     switch (class) {
         // rest: slow drift below ~0.3 cycles/window, all axes, small amplitude
         0 => {
-            const fx = rng_range(0.1, 0.35);
-            const fy = rng_range(0.1, 0.35);
-            const fz = rng_range(0.1, 0.35);
+            const fx = rng.range(0.1, 0.35);
+            const fy = rng.range(0.1, 0.35);
+            const fz = rng.range(0.1, 0.35);
             for (0..T0) |i| {
                 const t: f32 = @floatFromInt(i);
                 x[i] = 0.22 * @sin(2 * math.pi * fx * t / T0 + phase);
@@ -145,8 +119,8 @@ fn gen_sample(class: usize, out: []f32) void {
         },
         // shake: fast oscillation concentrated on x, 8-12 cycles per window
         1 => {
-            const f = rng_range(8.0, 12.0);
-            const phase_yz = phase + rng_range(0, 2 * math.pi);
+            const f = rng.range(8.0, 12.0);
+            const phase_yz = phase + rng.range(0, 2 * math.pi);
             for (0..T0) |i| {
                 const t: f32 = @floatFromInt(i);
                 x[i] = amp * @sin(2 * math.pi * f * t / T0 + phase);
@@ -156,7 +130,7 @@ fn gen_sample(class: usize, out: []f32) void {
         },
         // circle: x and y in quadrature at 2-4 cycles per window, z quiet
         2 => {
-            const f = rng_range(2.0, 4.0);
+            const f = rng.range(2.0, 4.0);
             for (0..T0) |i| {
                 const t: f32 = @floatFromInt(i);
                 const w = 2 * math.pi * f * t / T0 + phase;
@@ -167,10 +141,10 @@ fn gen_sample(class: usize, out: []f32) void {
         },
         // tap: decaying impulse at a random position on a random axis
         else => {
-            const pos: usize = @intFromFloat(rng_range(24, T0 - 48));
-            const width: usize = 14 + @as(usize, @intFromFloat(rng_range(0, 8)));
-            const axis = rng_next() % 3;
-            const a: f32 = rng_range(1.4, 2.2) * (if (rng_next() & 1 == 0) @as(f32, 1.0) else -1.0);
+            const pos: usize = @intFromFloat(rng.range(24, T0 - 48));
+            const width: usize = 14 + @as(usize, @intFromFloat(rng.range(0, 8)));
+            const axis = rng.next() % 3;
+            const a: f32 = rng.range(1.4, 2.2) * (if (rng.next() & 1 == 0) @as(f32, 1.0) else -1.0);
             var i: usize = 0;
             while (i < width and pos + i < T0) : (i += 1) {
                 const j: f32 = @floatFromInt(i);
@@ -184,7 +158,7 @@ fn gen_sample(class: usize, out: []f32) void {
         },
     }
     // sensor noise on every axis; taps get it too (the impulse rides on top)
-    for (out[0 .. C0 * T0]) |*v| v.* += rng_gauss(0, NOISE_STD);
+    for (out[0 .. C0 * T0]) |*v| v.* += rng.gauss(0, NOISE_STD);
 }
 
 fn gen_dataset() void {
@@ -197,7 +171,7 @@ fn gen_dataset() void {
     var i: usize = N_SAMPLES;
     while (i > 1) {
         i -= 1;
-        const j: usize = @intFromFloat(rng_uniform() * @as(f64, @floatFromInt(i + 1)));
+        const j: usize = @intFromFloat(rng.uniform() * @as(f64, @floatFromInt(i + 1)));
         std.mem.swap([C0 * T0]f32, &data[i], &data[j]);
         std.mem.swap(u8, &labels[i], &labels[j]);
     }
@@ -236,7 +210,7 @@ fn make_param(alloc: std.mem.Allocator, size: usize, stddev: f32) []f32 {
         clib.exit(1);
         unreachable;
     };
-    for (p) |*x| x.* = rng_gauss(0, stddev);
+    for (p) |*x| x.* = rng.gauss(0, stddev);
     return p;
 }
 
@@ -312,30 +286,14 @@ inline fn W(i: usize) []const f32 {
 }
 
 // ---------------------------------------------------------------------------
-// BitNet ternary quantization (same semantics as tritnet.zig)
+// BitNet ternary quantization (framework/quant.zig, same semantics everywhere)
 // ---------------------------------------------------------------------------
-
-const TernInfo = struct { t: f32, scale: f32 };
 
 var trits_scratch: [N_CLASS * FC_IN]i8 = undefined;
 
-fn quant_trits(w: []const f32, trits: []i8) TernInfo {
-    var sum: f32 = 0;
-    for (w) |xx| sum += @abs(xx);
-    const scale = sum / @as(f32, @floatFromInt(w.len));
-    const t = 0.5 * scale;
-    for (w, trits) |xx, *q| {
-        q.* = if (xx > t) 1 else if (xx < -t) -1 else 0;
-    }
-    return .{ .t = t, .scale = scale };
-}
-
 fn ternarize(p: *Param) void {
     const qw = p.qw orelse return;
-    const info = quant_trits(p.w, trits_scratch[0..p.w.len]);
-    for (qw, trits_scratch[0..p.w.len]) |*q, tr| {
-        q.* = @as(f32, @floatFromInt(tr)) * info.scale;
-    }
+    const info = fw.quant.ternarize(p.w, qw, trits_scratch[0..p.w.len]);
     p.t = info.t;
 }
 
@@ -345,27 +303,10 @@ fn ternarize_all() void {
 
 /// Straight-through estimator mask: keep gradients only where |W| < 2*t,
 /// exactly the rule bitnet_gpt_train.py / BitNetMCU use.
-fn mask_grads(p: *Param) void {
-    if (p.qw == null) return;
-    for (p.w, p.d) |xx, *gg| {
-        if (!(@abs(xx) < 2 * p.t)) gg.* = 0;
-    }
-}
-
 fn mask_all_grads() void {
-    for (&params) |*p| mask_grads(p);
-}
-
-inline fn act_quant8(v: []f32) void {
-    var m: f32 = 1e-5;
-    for (v) |xx| {
-        const a = @abs(xx);
-        if (a > m) m = a;
-    }
-    const s: f32 = 127.0 / m;
-    for (v) |*xx| {
-        // |x| <= m so the round lands inside int8 range; STE backward is identity
-        xx.* = @round(xx.* * s) / s;
+    for (&params) |*p| {
+        if (p.qw == null) continue;
+        fw.quant.maskGrads(p.w, p.d, p.t);
     }
 }
 
@@ -491,21 +432,21 @@ var bwd_dc1: [C1 * T1]f32 = undefined;
 
 fn forward_sample(x: []const f32, label: usize, act: *Acts) f32 {
     @memcpy(&act.xq, x);
-    if (act_q) act_quant8(&act.xq);
+    if (act_q) fw.quant.actQuant8(&act.xq);
 
     conv1d_fwd(&act.xq, W(PW1), params[PB1].w, C0, T0, C1, K1, &act.c1);
     for (&act.c1) |*v| {
         if (v.* < 0) v.* = 0;
     }
     maxpool2_fwd(&act.c1, C1, T1, &act.p1_arg, &act.p1);
-    if (act_q) act_quant8(&act.p1);
+    if (act_q) fw.quant.actQuant8(&act.p1);
 
     conv1d_fwd(&act.p1, W(PW2), params[PB2].w, C1, P1, C2, K2, &act.c2);
     for (&act.c2) |*v| {
         if (v.* < 0) v.* = 0;
     }
     maxpool2_fwd(&act.c2, C2, T2, &act.p2_arg, &act.p2);
-    if (act_q) act_quant8(&act.p2);
+    if (act_q) fw.quant.actQuant8(&act.p2);
 
     for (0..N_CLASS) |c| {
         var s = params[PB3].w[c];
@@ -560,27 +501,13 @@ fn backward_sample(act: *Acts, label: usize, inv_batch: f32) void {
 }
 
 // ---------------------------------------------------------------------------
-// optimizer
+// optimizer (framework/adam.zig)
 // ---------------------------------------------------------------------------
 
-fn adam_update(p: []f32, g: []f32, m: []f32, v: []f32, lr: f32, b1c: f32, b2c: f32, gscale: f32) void {
-    const b1: f32 = 0.9;
-    const b2: f32 = 0.999;
-    const eps: f32 = 1e-8;
-    for (p, g, m, v) |*pp, *gg, *mm, *vv| {
-        const gs = gg.* * gscale;
-        mm.* = b1 * mm.* + (1 - b1) * gs;
-        vv.* = b2 * vv.* + (1 - b2) * gs * gs;
-        pp.* -= lr * (mm.* / b1c) / (@sqrt(vv.* / b2c) + eps);
-        gg.* = 0;
-    }
-}
-
 fn adam_step(step: usize, steps: usize, lr: f32, gscale: f32) void {
-    const b1c = 1.0 - math.pow(f32, 0.9, @floatFromInt(step + 1));
-    const b2c = 1.0 - math.pow(f32, 0.999, @floatFromInt(step + 1));
-    const lr_t: f32 = @floatCast(lr * 0.5 * (1.0 + @cos(math.pi * @as(f64, @floatFromInt(step)) / @as(f64, @floatFromInt(steps)))));
-    for (&params) |*p| adam_update(p.w, p.d, p.m, p.v, lr_t, b1c, b2c, gscale);
+    const bc = fw.adam.biasCorr(step);
+    const lr_t = fw.adam.cosineLr(lr, step, steps);
+    for (&params) |*p| fw.adam.update(p.w, p.d, p.m, p.v, lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, gscale);
 }
 
 fn global_grad_norm() f32 {
@@ -601,20 +528,6 @@ fn reset_adam() void {
 // ---------------------------------------------------------------------------
 // evaluation / training loops
 // ---------------------------------------------------------------------------
-
-fn now_s() f64 {
-    if (builtin.os.tag == .windows) {
-        var freq: winclib.LARGE_INTEGER = undefined;
-        var cnt: winclib.LARGE_INTEGER = undefined;
-        _ = winclib.QueryPerformanceFrequency(&freq);
-        _ = winclib.QueryPerformanceCounter(&cnt);
-        return @as(f64, @floatFromInt(cnt.QuadPart)) / @as(f64, @floatFromInt(freq.QuadPart));
-    } else {
-        var ts: timeclib.timespec = undefined;
-        _ = timeclib.clock_gettime(timeclib.CLOCK_MONOTONIC, &ts);
-        return @as(f64, @floatFromInt(ts.tv_sec)) + @as(f64, @floatFromInt(ts.tv_nsec)) * 1e-9;
-    }
-}
 
 const EvalResult = struct {
     loss: f64,
@@ -654,13 +567,13 @@ fn train_phase(comptime qat: bool, steps: usize, lr: f32, batch_size: usize) voi
     for (&order, 0..) |*o, i| o.* = @intCast(i);
     var running: f32 = 1.4; // ~ln(4), chance-level cross-entropy
     const per_epoch = N_TRAIN / batch_size;
-    const t0 = now_s();
+    const t0 = fw.timing.nowS();
     for (0..steps) |step| {
         if (step % per_epoch == 0) {
             var i: usize = N_TRAIN;
             while (i > 1) {
                 i -= 1;
-                const j: usize = @intFromFloat(rng_uniform() * @as(f64, @floatFromInt(i + 1)));
+                const j: usize = @intFromFloat(rng.uniform() * @as(f64, @floatFromInt(i + 1)));
                 std.mem.swap(u32, &order[i], &order[j]);
             }
         }
@@ -686,7 +599,7 @@ fn train_phase(comptime qat: bool, steps: usize, lr: f32, batch_size: usize) voi
             _ = clib.printf("step %4d / %4d | loss %.4f  (avg %.4f)\n", @as(c_int, @intCast(step + 1)), @as(c_int, @intCast(steps)), @as(f64, batch_loss), @as(f64, running));
         }
     }
-    const elapsed = now_s() - t0;
+    const elapsed = fw.timing.nowS() - t0;
     const name: []const u8 = if (qat) "qat " else "fp32";
     _ = clib.printf("%s train: %.3f s  (%.0f steps/sec)\n", @as([*]const u8, @ptrCast(name.ptr)), elapsed, @as(f64, @floatFromInt(steps)) / elapsed);
 }
@@ -726,11 +639,11 @@ fn bench_latency(ternary_weights: bool, iters: usize) f64 {
     for (0..200) |i| {
         sink += forward_sample(&data[i % N_TRAIN], 0, &act);
     }
-    const t0 = now_s();
+    const t0 = fw.timing.nowS();
     for (0..iters) |i| {
         sink += forward_sample(&data[i % N_TRAIN], 0, &act);
     }
-    const elapsed = now_s() - t0;
+    const elapsed = fw.timing.nowS() - t0;
     bench_sink += sink; // keep the loop observable; printed once at the end
     return elapsed / @as(f64, @floatFromInt(iters)) * 1e6;
 }
@@ -739,49 +652,24 @@ fn bench_latency(ternary_weights: bool, iters: usize) f64 {
 // packed model + val split export (consumed by c/cnn1d_inference.c)
 // ---------------------------------------------------------------------------
 
-fn put_u32(buf: []u8, cur: *usize, v: u32) void {
-    std.mem.writeInt(u32, buf[cur.*..][0..4], v, .little);
-    cur.* += 4;
-}
-
-fn put_f32(buf: []u8, cur: *usize, v: f32) void {
-    std.mem.writeInt(u32, buf[cur.*..][0..4], @bitCast(v), .little);
-    cur.* += 4;
-}
-
-fn put_bytes(buf: []u8, cur: *usize, s: []const u8) void {
-    @memcpy(buf[cur.*..][0..s.len], s);
-    cur.* += s.len;
-}
-
-/// One ternary matrix: ternarize, pack, append (scale, nbytes, bytes).
-fn put_ternary_matrix(buf: []u8, cur: *usize, p: *Param) void {
-    const info = quant_trits(p.w, trits_scratch[0..p.w.len]);
-    const ngroups = ternary.packed_len(p.w.len);
-    var pk: [ternary.packed_len(N_CLASS * FC_IN)]u8 = undefined;
-    ternary.pack5(pk[0..ngroups], trits_scratch[0..p.w.len]);
-    put_f32(buf, cur, info.scale);
-    put_u32(buf, cur, @intCast(ngroups));
-    put_bytes(buf, cur, pk[0..ngroups]);
-}
-
 fn export_model(io: std.Io, path: []const u8) !usize {
     var buf: [1024]u8 = undefined;
     var cur: usize = 0;
-    put_bytes(buf[0..], &cur, MAGIC);
-    put_u32(buf[0..], &cur, C0);
-    put_u32(buf[0..], &cur, T0);
-    put_u32(buf[0..], &cur, C1);
-    put_u32(buf[0..], &cur, K1);
-    put_u32(buf[0..], &cur, C2);
-    put_u32(buf[0..], &cur, K2);
-    put_u32(buf[0..], &cur, N_CLASS);
-    put_ternary_matrix(buf[0..], &cur, &params[PW1]);
-    put_ternary_matrix(buf[0..], &cur, &params[PW2]);
-    put_ternary_matrix(buf[0..], &cur, &params[PW3]);
-    put_bytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB1].w));
-    put_bytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB2].w));
-    put_bytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB3].w));
+    const w = &fw.packed_model;
+    w.putBytes(buf[0..], &cur, MAGIC);
+    w.putU32(buf[0..], &cur, C0);
+    w.putU32(buf[0..], &cur, T0);
+    w.putU32(buf[0..], &cur, C1);
+    w.putU32(buf[0..], &cur, K1);
+    w.putU32(buf[0..], &cur, C2);
+    w.putU32(buf[0..], &cur, K2);
+    w.putU32(buf[0..], &cur, N_CLASS);
+    w.putTernaryMatrix(buf[0..], &cur, params[PW1].w, null, trits_scratch[0..params[PW1].w.len]);
+    w.putTernaryMatrix(buf[0..], &cur, params[PW2].w, null, trits_scratch[0..params[PW2].w.len]);
+    w.putTernaryMatrix(buf[0..], &cur, params[PW3].w, null, trits_scratch[0..params[PW3].w.len]);
+    w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB1].w));
+    w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB2].w));
+    w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB3].w));
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = buf[0..cur] });
     return cur;
 }
@@ -791,14 +679,15 @@ fn export_valset(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize 
     const buf = try alloc.alloc(u8, n);
     defer alloc.free(buf);
     var cur: usize = 0;
-    put_bytes(buf[0..], &cur, VALSET_MAGIC);
-    put_u32(buf[0..], &cur, N_VAL);
-    put_u32(buf[0..], &cur, C0);
-    put_u32(buf[0..], &cur, T0);
-    put_u32(buf[0..], &cur, N_CLASS);
+    const w = &fw.packed_model;
+    w.putBytes(buf[0..], &cur, VALSET_MAGIC);
+    w.putU32(buf[0..], &cur, N_VAL);
+    w.putU32(buf[0..], &cur, C0);
+    w.putU32(buf[0..], &cur, T0);
+    w.putU32(buf[0..], &cur, N_CLASS);
     // layout: [all windows][all labels] -- the C engine reads the same split
     for (N_TRAIN..N_SAMPLES) |i| {
-        put_bytes(buf[0..], &cur, std.mem.sliceAsBytes(data[i][0..]));
+        w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(data[i][0..]));
     }
     for (N_TRAIN..N_SAMPLES) |i| {
         buf[cur] = labels[i];
@@ -808,47 +697,12 @@ fn export_valset(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize 
     return cur;
 }
 
-const Reader = struct {
-    data: []const u8,
-    pos: usize = 0,
-
-    fn take(self: *Reader, n: usize) ?[]const u8 {
-        if (self.pos + n > self.data.len) return null;
-        const s = self.data[self.pos .. self.pos + n];
-        self.pos += n;
-        return s;
-    }
-
-    fn u32le(self: *Reader) ?u32 {
-        const s = self.take(4) orelse return null;
-        return std.mem.readInt(u32, s[0..4], .little);
-    }
-
-    fn f32le(self: *Reader) ?f32 {
-        const v = self.u32le() orelse return null;
-        return @bitCast(v);
-    }
-};
-
-fn load_one_matrix(r: *Reader, n: usize, qw: []f32) !void {
-    const scale = r.f32le() orelse return error.Truncated;
-    const nbytes = r.u32le() orelse return error.Truncated;
-    if (nbytes != ternary.packed_len(n)) return error.BadMatrixSize;
-    const bytes = r.take(nbytes) orelse return error.Truncated;
-    const trits = try gpa.alloc(i8, n);
-    defer gpa.free(trits);
-    ternary.unpack5(trits, bytes);
-    for (qw, trits) |*q, t| {
-        q.* = @as(f32, @floatFromInt(t)) * scale;
-    }
-}
-
 /// Rebuild the deployed model from the packed file. Returns the number of
 /// trits restored.
 fn load_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize {
     const fdata = try std.Io.Dir.cwd().readFileAlloc(io, path, alloc, .limited(4096));
     defer alloc.free(fdata);
-    var r = Reader{ .data = fdata };
+    var r = fw.packed_model.Reader{ .data = fdata };
     const magic = r.take(MAGIC.len) orelse return error.Truncated;
     if (!std.mem.eql(u8, magic, MAGIC)) return error.BadMagic;
     const dims = [7]usize{ C0, T0, C1, K1, C2, K2, N_CLASS };
@@ -857,12 +711,9 @@ fn load_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize {
         if (v != d) return error.ShapeMismatch;
     }
     var trit_total: usize = 0;
-    try load_one_matrix(&r, params[PW1].w.len, params[PW1].qw.?);
-    trit_total += params[PW1].w.len;
-    try load_one_matrix(&r, params[PW2].w.len, params[PW2].qw.?);
-    trit_total += params[PW2].w.len;
-    try load_one_matrix(&r, params[PW3].w.len, params[PW3].qw.?);
-    trit_total += params[PW3].w.len;
+    trit_total += try fw.packed_model.readMatrix(&r, params[PW1].w.len, params[PW1].qw.?, alloc);
+    trit_total += try fw.packed_model.readMatrix(&r, params[PW2].w.len, params[PW2].qw.?, alloc);
+    trit_total += try fw.packed_model.readMatrix(&r, params[PW3].w.len, params[PW3].qw.?, alloc);
     const b1f = r.take(C1 * 4) orelse return error.Truncated;
     @memcpy(params[PB1].w, std.mem.bytesAsSlice(f32, b1f));
     const b2f = r.take(C2 * 4) orelse return error.Truncated;
@@ -877,7 +728,9 @@ fn load_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize {
 // ---------------------------------------------------------------------------
 
 pub fn main(init: std.process.Init) u8 {
-    _ = clib.printf("== tritnet-cnn: TinyML 1D-CNN, ternary pipeline ==\n");
+    // this example's fixed RNG stream: identical runs on every machine
+    rng.state = 0x7EED_1DCA_2026_0001;
+    _ = clib.printf("== example-cnn: TinyML 1D-CNN, ternary pipeline ==\n");
     _ = clib.printf("task: 4-class gesture recognition, 3-axis accel %dx%d windows\n", @as(c_int, C0), @as(c_int, T0));
     _ = clib.printf("arch: Conv1D(%d->%d,k=%d)+ReLU+MaxPool -> Conv1D(%d->%d,k=%d)+ReLU+MaxPool -> Dense(%d->%d)\n", @as(c_int, C0), @as(c_int, C1), @as(c_int, K1), @as(c_int, C1), @as(c_int, C2), @as(c_int, K2), @as(c_int, FC_IN), @as(c_int, N_CLASS));
 
@@ -923,8 +776,7 @@ pub fn main(init: std.process.Init) u8 {
     var hist = [3]usize{ 0, 0, 0 };
     for (&params) |*p| {
         if (p.qw == null) continue;
-        _ = quant_trits(p.w, trits_scratch[0..p.w.len]);
-        for (trits_scratch[0..p.w.len]) |t| hist[@intCast(t + 1)] += 1;
+        fw.quant.histTrits(p.w, trits_scratch[0..p.w.len], &hist);
     }
     const tern_total = hist[0] + hist[1] + hist[2];
     _ = clib.printf("  trits: -1 %.1f%%   0 %.1f%%   +1 %.1f%%\n", 100.0 * @as(f64, @floatFromInt(hist[0])) / @as(f64, @floatFromInt(tern_total)), 100.0 * @as(f64, @floatFromInt(hist[1])) / @as(f64, @floatFromInt(tern_total)), 100.0 * @as(f64, @floatFromInt(hist[2])) / @as(f64, @floatFromInt(tern_total)));
@@ -933,7 +785,7 @@ pub fn main(init: std.process.Init) u8 {
     print_confusion(&qat_val.confusion);
 
     const fp32_bytes = N_PARAMS * 4;
-    const packed_bytes = 8 + 7 * 4 + 3 * 8 + ternary.packed_len(N_TERNARY) + (N_PARAMS - N_TERNARY) * 4;
+    const packed_bytes = 8 + 7 * 4 + 3 * 8 + fw.ternary.packed_len(N_TERNARY) + (N_PARAMS - N_TERNARY) * 4;
     _ = clib.printf("\nstorage\n");
     _ = clib.printf("  fp32 weights         : %6d bytes\n", @as(c_int, @intCast(fp32_bytes)));
     _ = clib.printf("  naive 2-bit          : %6d bytes\n", @as(c_int, @intCast((N_TERNARY + 3) / 4 + (N_PARAMS - N_TERNARY) * 4)));
@@ -990,8 +842,8 @@ pub fn main(init: std.process.Init) u8 {
 const testing = std.testing;
 
 test "conv1d forward matches a direct reference" {
-    var rng = std.Random.DefaultPrng.init(7);
-    const rand = rng.random();
+    var prng = std.Random.DefaultPrng.init(7);
+    const rand = prng.random();
     const cin = 2;
     const tin = 6;
     const cout = 3;
@@ -1022,8 +874,8 @@ test "conv1d forward matches a direct reference" {
 }
 
 test "conv1d gradients match finite differences" {
-    var rng = std.Random.DefaultPrng.init(11);
-    const rand = rng.random();
+    var prng = std.Random.DefaultPrng.init(11);
+    const rand = prng.random();
     const cin = 2;
     const tin = 5;
     const cout = 3;
@@ -1118,14 +970,14 @@ test "maxpool2 routes gradient to the winner only" {
 }
 
 test "dataset is deterministic and class-balanced" {
-    const saved_rng = rng_state;
-    defer rng_state = saved_rng;
+    const saved_rng = rng.state;
+    defer rng.state = saved_rng;
 
-    rng_state = 0xBEEF;
+    rng.state = 0xBEEF;
     var a: [C0 * T0]f32 = undefined;
     var b: [C0 * T0]f32 = undefined;
     gen_sample(2, &a);
-    rng_state = 0xBEEF;
+    rng.state = 0xBEEF;
     gen_sample(2, &b);
     try testing.expectEqualSlices(f32, &a, &b);
 
@@ -1139,9 +991,9 @@ test "dataset is deterministic and class-balanced" {
 }
 
 test "end-to-end gradient check on sampled weights" {
-    const saved_rng = rng_state;
-    defer rng_state = saved_rng;
-    rng_state = 0xA11CE;
+    const saved_rng = rng.state;
+    defer rng.state = saved_rng;
+    rng.state = 0xA11CE;
 
     const alloc = testing.allocator;
     const sizes = [6]usize{ C1 * C0 * K1, C1, C2 * C1 * K2, C2, N_CLASS * FC_IN, N_CLASS };
@@ -1164,7 +1016,7 @@ test "end-to-end gradient check on sampled weights" {
     }
     const ternary_sizes = [6]usize{ sizes[0], 0, sizes[2], 0, sizes[4], 0 };
     for (0..6) |i| {
-        for (keep[i][0]) |*v| v.* = rng_gauss(0, 0.2);
+        for (keep[i][0]) |*v| v.* = rng.gauss(0, 0.2);
         var qw: ?[]f32 = null;
         if (ternary_sizes[i] > 0) {
             qw = try alloc.alloc(f32, ternary_sizes[i]);
@@ -1181,7 +1033,7 @@ test "end-to-end gradient check on sampled weights" {
     }
 
     var x: [C0 * T0]f32 = undefined;
-    for (&x) |*v| v.* = rng_gauss(0, 0.5);
+    for (&x) |*v| v.* = rng.gauss(0, 0.5);
     const label: usize = 2;
 
     var act: Acts = .{};
@@ -1226,9 +1078,9 @@ test "ternary QAT forward only changes outputs within quantization error" {
     // sanity: with fixed weights, switching to the ternary tables must keep
     // predictions on a fixed input close to the fp32 forward (soft check that
     // absmean scales are calibrated, not a hard bound)
-    const saved_rng = rng_state;
-    defer rng_state = saved_rng;
-    rng_state = 0x1DCA;
+    const saved_rng = rng.state;
+    defer rng.state = saved_rng;
+    rng.state = 0x1DCA;
 
     const alloc = testing.allocator;
     const sizes = [6]usize{ C1 * C0 * K1, C1, C2 * C1 * K2, C2, N_CLASS * FC_IN, N_CLASS };
@@ -1242,7 +1094,7 @@ test "ternary QAT forward only changes outputs within quantization error" {
         @memset(keep[i][1], 0);
         @memset(keep[i][2], 0);
         @memset(keep[i][3], 0);
-        for (keep[i][0]) |*v| v.* = rng_gauss(0, 0.2);
+        for (keep[i][0]) |*v| v.* = rng.gauss(0, 0.2);
     }
     defer {
         for (0..6) |i| {
@@ -1261,7 +1113,7 @@ test "ternary QAT forward only changes outputs within quantization error" {
     }
 
     var x: [C0 * T0]f32 = undefined;
-    for (&x) |*v| v.* = rng_gauss(0, 0.5);
+    for (&x) |*v| v.* = rng.gauss(0, 0.5);
     var act: Acts = .{};
 
     weights_q = false;

@@ -4,7 +4,18 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize: std.builtin.OptimizeMode = if (b.release_mode != .off) .ReleaseFast else .Debug;
 
-    // fp32 baseline trainer/inference (the original microGPT, in Zig)
+    // The framework: the shared train -> quantize -> deploy core
+    // (RNG, ternary codec, absmean QAT, Adam, packed-file container, clock).
+    // Every example imports it as "framework"; the test step runs its units.
+    const fw_mod = b.createModule(.{
+        .root_source_file = b.path("src/framework.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+
+    // fp32 reference baseline: the original microGPT in Zig, A/B twin of
+    // c/microgpt.c and the sanity check for the framework's fp32 pretrain leg
     const fp32_mod = b.createModule(.{
         .root_source_file = b.path("src/fp32.zig"),
         .target = target,
@@ -12,18 +23,16 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     const fp32_exe = b.addExecutable(.{
-        .name = "tritnet-fp32",
+        .name = "fp32-baseline",
         .root_module = fp32_mod,
     });
-    if (target.result.os.tag != .windows) {
-        fp32_mod.linkSystemLibrary("m", .{});
-    }
+    if (target.result.os.tag != .windows) fp32_mod.linkSystemLibrary("m", .{});
     b.installArtifact(fp32_exe);
 
-    const run_cmd = b.addRunArtifact(fp32_exe);
-    if (b.args) |args| run_cmd.addArgs(args) else run_cmd.addArg("data/names.txt");
+    const fp32_cmd = b.addRunArtifact(fp32_exe);
+    if (b.args) |args| fp32_cmd.addArgs(args) else fp32_cmd.addArg("data/names.txt");
     const run_step = b.step("run", "Run the fp32 baseline trainer");
-    run_step.dependOn(&run_cmd.step);
+    run_step.dependOn(&fp32_cmd.step);
 
     // C reference implementation, kept for A/B comparison
     const c_mod = b.createModule(.{
@@ -45,60 +54,101 @@ pub fn build(b: *std.Build) void {
     if (target.result.os.tag != .windows) c_mod.linkSystemLibrary("m", .{});
     b.installArtifact(c_exe);
 
-    // full pipeline: fp32 pretrain -> ternary QAT -> ternary-packed export
-    const tritnet_mod = b.createModule(.{
-        .root_source_file = b.path("src/tritnet.zig"),
+    // Examples: thin per-model drivers over the framework. Each one runs the
+    // whole pipeline -- fp32 pretrain -> ternary QAT -> validation -> packed
+    // export -> round-trip check -- and writes its artifacts to modeldata/.
+    const gpt_mod = b.createModule(.{
+        .root_source_file = b.path("examples/gpt_names.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    const tritnet_exe = b.addExecutable(.{
-        .name = "tritnetmcu",
-        .root_module = tritnet_mod,
+    gpt_mod.addImport("framework", fw_mod);
+    const gpt_exe = b.addExecutable(.{
+        .name = "example-gpt",
+        .root_module = gpt_mod,
     });
-    if (target.result.os.tag != .windows) tritnet_mod.linkSystemLibrary("m", .{});
-    b.installArtifact(tritnet_exe);
+    if (target.result.os.tag != .windows) gpt_mod.linkSystemLibrary("m", .{});
+    b.installArtifact(gpt_exe);
 
-    const tritnet_cmd = b.addRunArtifact(tritnet_exe);
-    if (b.args) |args| tritnet_cmd.addArgs(args) else tritnet_cmd.addArg("data/names.txt");
-    const tritnet_step = b.step("tritnet", "Full pipeline: fp32 pretrain -> ternary QAT -> packed export");
-    tritnet_step.dependOn(&tritnet_cmd.step);
+    const gpt_cmd = b.addRunArtifact(gpt_exe);
+    if (b.args) |args| gpt_cmd.addArgs(args) else gpt_cmd.addArg("data/names.txt");
+    const gpt_step = b.step("example-gpt", "Example: micro-GPT names (train -> quantize -> pack)");
+    gpt_step.dependOn(&gpt_cmd.step);
 
-    // TinyML 1D-CNN: fp32 pretrain -> ternary QAT -> packed export + verification
     const cnn_mod = b.createModule(.{
-        .root_source_file = b.path("src/cnn1d.zig"),
+        .root_source_file = b.path("examples/gesture_cnn.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
+    cnn_mod.addImport("framework", fw_mod);
     const cnn_exe = b.addExecutable(.{
-        .name = "tritnet-cnn",
+        .name = "example-cnn",
         .root_module = cnn_mod,
     });
     if (target.result.os.tag != .windows) cnn_mod.linkSystemLibrary("m", .{});
     b.installArtifact(cnn_exe);
 
     const cnn_cmd = b.addRunArtifact(cnn_exe);
-    const cnn_step = b.step("cnn", "TinyML 1D-CNN: fp32 pretrain -> ternary QAT -> packed export");
+    const cnn_step = b.step("example-cnn", "Example: TinyML gesture 1D-CNN (train -> quantize -> pack)");
     cnn_step.dependOn(&cnn_cmd.step);
 
-    const ternary_test_mod = b.createModule(.{
-        .root_source_file = b.path("src/ternary.zig"),
+    const ncps_mod = b.createModule(.{
+        .root_source_file = b.path("examples/liquid_sine.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
-    const ternary_tests = b.addTest(.{ .root_module = ternary_test_mod });
-    const run_tests = b.addRunArtifact(ternary_tests);
+    ncps_mod.addImport("framework", fw_mod);
+    const ncps_exe = b.addExecutable(.{
+        .name = "example-ncps",
+        .root_module = ncps_mod,
+    });
+    if (target.result.os.tag != .windows) ncps_mod.linkSystemLibrary("m", .{});
+    b.installArtifact(ncps_exe);
+
+    const ncps_cmd = b.addRunArtifact(ncps_exe);
+    const ncps_step = b.step("example-ncps", "Example: CfC/LTC Neural Circuit Policies (train -> quantize -> pack)");
+    ncps_step.dependOn(&ncps_cmd.step);
+
+    // unit tests: the framework's own modules plus each example's suite
+    const fw_tests = b.addTest(.{ .root_module = fw_mod });
+    const run_fw_tests = b.addRunArtifact(fw_tests);
+
+    const gpt_test_mod = b.createModule(.{
+        .root_source_file = b.path("examples/gpt_names.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    gpt_test_mod.addImport("framework", fw_mod);
+    const gpt_tests = b.addTest(.{ .root_module = gpt_test_mod });
+    const run_gpt_tests = b.addRunArtifact(gpt_tests);
 
     const cnn_test_mod = b.createModule(.{
-        .root_source_file = b.path("src/cnn1d.zig"),
+        .root_source_file = b.path("examples/gesture_cnn.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
+    cnn_test_mod.addImport("framework", fw_mod);
     const cnn_tests = b.addTest(.{ .root_module = cnn_test_mod });
     const run_cnn_tests = b.addRunArtifact(cnn_tests);
 
-    const test_step = b.step("test", "Run ternary packing + 1D-CNN unit tests");
-    test_step.dependOn(&run_tests.step);
+    const ncps_test_mod = b.createModule(.{
+        .root_source_file = b.path("examples/liquid_sine.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    ncps_test_mod.addImport("framework", fw_mod);
+    const ncps_tests = b.addTest(.{ .root_module = ncps_test_mod });
+    const run_ncps_tests = b.addRunArtifact(ncps_tests);
+
+    const test_step = b.step("test", "Run framework + example unit tests");
+    test_step.dependOn(&run_fw_tests.step);
+    test_step.dependOn(&run_gpt_tests.step);
     test_step.dependOn(&run_cnn_tests.step);
+    test_step.dependOn(&run_ncps_tests.step);
 }

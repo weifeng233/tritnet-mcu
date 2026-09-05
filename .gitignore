@@ -1,9 +1,12 @@
 # build output
 microgpt
 microgpt-c
-tritnet-fp32
-tritnetmcu
+fp32-baseline
+example-gpt
+example-cnn
+example-ncps
 cnn1d-c
+ncps-c
 zig-out/
 .zig-cache/
 *.o

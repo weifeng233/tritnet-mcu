@@ -2,7 +2,7 @@
  * cnn1d_inference.c -- deployment check for the TinyML 1D-CNN artifact.
  *
  * Loads the ternary-packed model (modeldata/cnn1d_packed.bin) and the held-out
- * val split (modeldata/cnn1d_valset.bin) written by `tritnet-cnn`, rebuilds
+ * val split (modeldata/cnn1d_valset.bin) written by `example-cnn`, rebuilds
  * the network, and verifies that the packed artifact reaches the same val
  * accuracy as the Zig trainer reported before export.
  *
@@ -63,7 +63,7 @@ static uint8_t *read_file(const char *path, size_t *len_out) {
     return buf;
 }
 
-/* Same division-free decode as src/ternary.zig: multiply by 3, take the top
+/* Same division-free decode as src/framework/ternary.zig: multiply by 3, take the top
  * byte as the next trit, mask, repeat. */
 static void unpack5(int8_t *dst, const uint8_t *src, size_t n) {
     size_t i = 0, g = 0;

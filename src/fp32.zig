@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const math = std.math;
+const fw = @import("framework.zig");
 
 const clib = @cImport({
     @cInclude("stdio.h");
@@ -8,12 +9,6 @@ const clib = @cImport({
     @cInclude("string.h");
     @cInclude("math.h");
 });
-const winclib = if (builtin.os.tag == .windows) @cImport({
-    @cInclude("windows.h");
-}) else struct {};
-const timeclib = if (builtin.os.tag != .windows) @cImport({
-    @cInclude("time.h");
-}) else struct {};
 
 const is_x86 = builtin.cpu.arch == .x86_64;
 const is_aarch64 = builtin.cpu.arch == .aarch64;
@@ -41,31 +36,14 @@ var vocab_size: usize = 0;
 var BOS: usize = 0;
 var lm_pad: usize = LM_PAD_MAX;
 
-var rng_state: u64 = 42;
-
-inline fn rng_next() u64 {
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 7;
-    rng_state ^= rng_state << 17;
-    return rng_state;
-}
-
-inline fn rng_uniform() f64 {
-    return @as(f64, @floatFromInt(rng_next() >> 11)) * (1.0 / 9007199254740992.0);
-}
-
-inline fn rng_gauss(mean: f32, stddev: f32) f32 {
-    var uu1 = rng_uniform();
-    const uu2 = rng_uniform();
-    if (uu1 < 1e-30) uu1 = 1e-30;
-    return mean + stddev * @as(f32, @floatCast(math.sqrt(-2.0 * @log(uu1)) * @cos(2.0 * math.pi * uu2)));
-}
+// deterministic stream (framework/rng.zig), seeded in main()
+const rng = fw.rng;
 
 fn shuffle_ints(arr: []i32) void {
     var i: usize = arr.len;
     while (i > 1) {
         i -= 1;
-        const j: usize = @intFromFloat(rng_uniform() * @as(f64, @floatFromInt(i + 1)));
+        const j: usize = @intFromFloat(rng.uniform() * @as(f64, @floatFromInt(i + 1)));
         const tmp = arr[i];
         arr[i] = arr[j];
         arr[j] = tmp;
@@ -179,7 +157,7 @@ fn make_param(size: usize, stddev: f32) []f32 {
         clib.exit(1);
         unreachable;
     };
-    for (0..size) |i| p[i] = rng_gauss(0, stddev);
+    for (0..size) |i| p[i] = rng.gauss(0, stddev);
     num_params += size;
     return p;
 }
@@ -666,40 +644,6 @@ fn gpt_backward(n: usize, tokens: []const i32, targets: []const i32) void {
     }
 }
 
-fn adam_update(p: []f32, g: []f32, m: []f32, v: []f32, lr: f32, b1: f32, b2: f32, eps: f32, b1c: f32, b2c: f32, gscale: f32) void {
-    const vb1: Vec8 = @splat(b1);
-    const vc1: Vec8 = @splat(1 - b1);
-    const vb2: Vec8 = @splat(b2);
-    const vc2: Vec8 = @splat(1 - b2);
-    const vb1c: Vec8 = @splat(b1c);
-    const vb2c: Vec8 = @splat(b2c);
-    const veps: Vec8 = @splat(eps);
-    const vlr: Vec8 = @splat(lr);
-    const vgs: Vec8 = @splat(gscale);
-    const n = p.len;
-    var i: usize = 0;
-    while (i + 8 <= n) : (i += 8) {
-        const gv: Vec8 = @as(*const [8]f32, @ptrCast(g[i..][0..8])).* * vgs;
-        var mv: Vec8 = @as(*const [8]f32, @ptrCast(m[i..][0..8])).*;
-        var vv: Vec8 = @as(*const [8]f32, @ptrCast(v[i..][0..8])).*;
-        mv = mv * vb1 + gv * vc1;
-        vv = vv * vb2 + gv * gv * vc2;
-        @as(*[8]f32, @ptrCast(m[i..][0..8])).* = mv;
-        @as(*[8]f32, @ptrCast(v[i..][0..8])).* = vv;
-        const upd = (vlr * (mv / vb1c)) / (@sqrt(vv / vb2c) + veps);
-        const pv: Vec8 = @as(*const [8]f32, @ptrCast(p[i..][0..8])).*;
-        @as(*[8]f32, @ptrCast(p[i..][0..8])).* = pv - upd;
-        @as(*[8]f32, @ptrCast(g[i..][0..8])).* = @splat(0);
-    }
-    while (i < n) : (i += 1) {
-        const gs = g[i] * gscale;
-        m[i] = b1 * m[i] + (1 - b1) * gs;
-        v[i] = b2 * v[i] + (1 - b2) * gs * gs;
-        p[i] -= lr * (m[i] / b1c) / (@sqrt(v[i] / b2c) + eps);
-        g[i] = 0;
-    }
-}
-
 var iw_q: [N_LAYER][N_EMBD * N_EMBD]f32 align(64) = [_][N_EMBD * N_EMBD]f32{[_]f32{0} ** (N_EMBD * N_EMBD)} ** N_LAYER;
 var iw_k: [N_LAYER][N_EMBD * N_EMBD]f32 align(64) = [_][N_EMBD * N_EMBD]f32{[_]f32{0} ** (N_EMBD * N_EMBD)} ** N_LAYER;
 var iw_v: [N_LAYER][N_EMBD * N_EMBD]f32 align(64) = [_][N_EMBD * N_EMBD]f32{[_]f32{0} ** (N_EMBD * N_EMBD)} ** N_LAYER;
@@ -766,7 +710,7 @@ fn sample_logits(logits: []f32, n: usize, npad: usize, inv_t: f32) usize {
         s0 += e0;
     }
     const sum: f32 = hsum4(s0 + s1) - @as(f32, @floatFromInt(npad - n)) * p[0];
-    const r: f32 = @as(f32, @floatCast(rng_uniform())) * sum;
+    const r: f32 = @as(f32, @floatCast(rng.uniform())) * sum;
     var cum: f32 = 0;
     for (0..n) |k| {
         cum += p[k];
@@ -1163,20 +1107,6 @@ fn gpt_forward_infer(token_id: usize, pos_id: usize, logits_out: []f32) void {
     }
 }
 
-fn now_s() f64 {
-    if (builtin.os.tag == .windows) {
-        var freq: winclib.LARGE_INTEGER = undefined;
-        var cnt: winclib.LARGE_INTEGER = undefined;
-        _ = winclib.QueryPerformanceFrequency(&freq);
-        _ = winclib.QueryPerformanceCounter(&cnt);
-        return @as(f64, @floatFromInt(cnt.QuadPart)) / @as(f64, @floatFromInt(freq.QuadPart));
-    } else {
-        var ts: timeclib.timespec = undefined;
-        _ = timeclib.clock_gettime(timeclib.CLOCK_MONOTONIC, &ts);
-        return @as(f64, @floatFromInt(ts.tv_sec)) + @as(f64, @floatFromInt(ts.tv_nsec)) * 1e-9;
-    }
-}
-
 inline fn sumsq_acc(acc: *Vec8, s: []const f32) void {
     var i: usize = 0;
     while (i + 8 <= s.len) : (i += 8) {
@@ -1189,6 +1119,8 @@ inline fn sumsq_acc(acc: *Vec8, s: []const f32) void {
 }
 
 pub fn main(init: std.process.Init) u8 {
+    // the baseline's fixed RNG stream: identical runs on every machine
+    rng.state = 42;
     var data_path: []const u8 = "data/names.txt";
     var arg_it = std.process.Args.Iterator.initAllocator(init.minimal.args, init.gpa) catch return 1;
     defer arg_it.deinit();
@@ -1215,13 +1147,10 @@ pub fn main(init: std.process.Init) u8 {
     init_params();
 
     const lr: f32 = 3e-3;
-    const b1: f32 = 0.9;
-    const b2: f32 = 0.999;
-    const eps: f32 = 1e-8;
     var running_loss: f32 = 3.3;
     const num_steps: usize = 20000;
 
-    const train_t0 = now_s();
+    const train_t0 = fw.timing.nowS();
     for (0..num_steps) |step| {
         const doc = &docs[step % num_docs];
         var doc_len: usize = 0;
@@ -1273,24 +1202,22 @@ pub fn main(init: std.process.Init) u8 {
             grad_clip = if (gnorm > 1.0) 1.0 / gnorm else 1.0;
         }
 
-        const lr_t: f32 = lr * 0.5 * (1.0 + @cos(@as(f32, @floatCast(math.pi * @as(f64, @floatFromInt(step)) / @as(f64, @floatFromInt(num_steps))))));
-        const stepf: f32 = @as(f32, @floatFromInt(step + 1));
-        const b1c: f32 = 1.0 - math.pow(f32, b1, stepf);
-        const b2c: f32 = 1.0 - math.pow(f32, b2, stepf);
+        const lr_t = fw.adam.cosineLr(lr, step, num_steps);
+        const bc = fw.adam.biasCorr(step);
         const es = vocab_size * N_EMBD;
         const ps = BLOCK_SIZE * N_EMBD;
         const as = N_EMBD * N_EMBD;
         const ms = MLP_DIM * N_EMBD;
-        adam_update(wte[0..es], d_wte[0..es], adam_m_wte[0..es], adam_v_wte[0..es], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-        adam_update(wpe[0..ps], d_wpe[0..ps], adam_m_wpe[0..ps], adam_v_wpe[0..ps], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-        adam_update(lm_head[0..es], d_lm_head[0..es], adam_m_lm[0..es], adam_v_lm[0..es], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
+        fw.adam.update(wte[0..es], d_wte[0..es], adam_m_wte[0..es], adam_v_wte[0..es], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+        fw.adam.update(wpe[0..ps], d_wpe[0..ps], adam_m_wpe[0..ps], adam_v_wpe[0..ps], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+        fw.adam.update(lm_head[0..es], d_lm_head[0..es], adam_m_lm[0..es], adam_v_lm[0..es], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
         for (0..N_LAYER) |i| {
-            adam_update(attn_wq[i][0..as], d_attn_wq[i][0..as], adam_m_wq[i][0..as], adam_v_wq[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(attn_wk[i][0..as], d_attn_wk[i][0..as], adam_m_wk[i][0..as], adam_v_wk[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(attn_wv[i][0..as], d_attn_wv[i][0..as], adam_m_wv[i][0..as], adam_v_wv[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(attn_wo[i][0..as], d_attn_wo[i][0..as], adam_m_wo[i][0..as], adam_v_wo[i][0..as], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(mlp_fc1[i][0..ms], d_mlp_fc1[i][0..ms], adam_m_fc1[i][0..ms], adam_v_fc1[i][0..ms], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
-            adam_update(mlp_fc2[i][0..ms], d_mlp_fc2[i][0..ms], adam_m_fc2[i][0..ms], adam_v_fc2[i][0..ms], lr_t, b1, b2, eps, b1c, b2c, grad_clip);
+            fw.adam.update(attn_wq[i][0..as], d_attn_wq[i][0..as], adam_m_wq[i][0..as], adam_v_wq[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(attn_wk[i][0..as], d_attn_wk[i][0..as], adam_m_wk[i][0..as], adam_v_wk[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(attn_wv[i][0..as], d_attn_wv[i][0..as], adam_m_wv[i][0..as], adam_v_wv[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(attn_wo[i][0..as], d_attn_wo[i][0..as], adam_m_wo[i][0..as], adam_v_wo[i][0..as], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(mlp_fc1[i][0..ms], d_mlp_fc1[i][0..ms], adam_m_fc1[i][0..ms], adam_v_fc1[i][0..ms], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
+            fw.adam.update(mlp_fc2[i][0..ms], d_mlp_fc2[i][0..ms], adam_m_fc2[i][0..ms], adam_v_fc2[i][0..ms], lr_t, fw.adam.BETA1, fw.adam.BETA2, fw.adam.EPS, bc.b1c, bc.b2c, grad_clip);
         }
 
         running_loss = running_loss * 0.99 + loss * 0.01;
@@ -1298,7 +1225,7 @@ pub fn main(init: std.process.Init) u8 {
             _ = clib.printf("step %4d / %4d | loss %.4f  (avg %.4f)\n", @as(c_int, @intCast(step + 1)), @as(c_int, @intCast(num_steps)), @as(f64, loss), @as(f64, running_loss));
         }
     }
-    const train_elapsed = now_s() - train_t0;
+    const train_elapsed = fw.timing.nowS() - train_t0;
     _ = clib.printf("train: %.3f s  (%.0f steps/sec)\n", train_elapsed, @as(f64, @floatFromInt(num_steps)) / train_elapsed);
 
     const temperature: f32 = 0.5;
@@ -1334,7 +1261,7 @@ pub fn main(init: std.process.Init) u8 {
     var emitted: i64 = 0;
     var tok: usize = BOS;
     var pos: usize = 0;
-    const t0 = now_s();
+    const t0 = fw.timing.nowS();
     var logits: [LM_PAD_MAX]f32 = undefined;
     var i: i64 = 0;
     while (i < N) : (i += 1) {
@@ -1350,7 +1277,7 @@ pub fn main(init: std.process.Init) u8 {
         }
         emitted += 1;
     }
-    const elapsed = now_s() - t0;
+    const elapsed = fw.timing.nowS() - t0;
     const simd_name: []const u8 = if (is_x86) "AVX2" else if (is_aarch64) "NEON" else "SCALAR";
     var name_buf: [16]u8 = undefined;
     @memcpy(name_buf[0..simd_name.len], simd_name);
