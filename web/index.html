@@ -424,7 +424,7 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
   <div class="grid2">
     <div class="card">
       <h3 style="color:var(--z-orange)">一条命令出两个二进制</h3>
-      <div class="cmd"><span class="p">$</span> zig build --release=fast<br><span class="p">→</span> zig-out/bin/tritnet-fp32.exe     <span class="p"># Zig 版</span><br><span class="p">→</span> zig-out/bin/microgpt-c.exe  <span class="p"># C 版（A/B 对照）</span></div>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast<br><span class="p">→</span> zig-out/bin/fp32-baseline.exe     <span class="p"># Zig 版</span><br><span class="p">→</span> zig-out/bin/microgpt-c.exe  <span class="p"># C 版（A/B 对照）</span></div>
       <div class="cmd"><span class="p">$</span> zig build --release=fast run   <span class="p"># 直接跑</span><br><span class="p">$</span> make CC=gcc run                <span class="p"># 老工具链对照</span></div>
       <div class="cmd"><span class="p">$</span> zig build --release=fast tritnet <span class="p"># fp32 预训练 → 三值 QAT → 打包导出 全链路</span></div>
       <p class="note" style="margin-bottom:0;">build.zig 里 C 版用 <code>addCSourceFile</code> 编入，flags 为 -Ofast -march=native -mavx2 -mfma —— 两个二进制由同一套 Zig/LLVM 工具链编译，最大化可比性。</p>
@@ -454,7 +454,7 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
 </div></section>
 
 <footer><div class="wrap">
-  数据于 2026-08-31 在 AMD Ryzen 9 7940H 上由 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/tritnet-fp32.exe</code> 与 <code style="font-family:ui-monospace,Consolas,monospace;">microgpt-c.exe</code> 实测采集（Zig 为训练内核向量化后重测） · TritNet-MCU 项目可视化对比页
+  数据于 2026-08-31 在 AMD Ryzen 9 7940H 上由 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/fp32-baseline.exe</code> 与 <code style="font-family:ui-monospace,Consolas,monospace;">microgpt-c.exe</code> 实测采集（Zig 为训练内核向量化后重测） · TritNet-MCU 项目可视化对比页
 </div></footer>
 
 <script>

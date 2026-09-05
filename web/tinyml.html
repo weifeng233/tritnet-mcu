@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TritNet-CNN：TinyML 三元 1D-CNN 传感器分类器</title>
+<style>
+  :root{
+    --bg:#0c1017; --panel:#131a26; --panel2:#0f1520; --line:#22304a;
+    --text:#d7e0ef; --muted:#8b98ad; --dim:#5b6a82;
+    --c-teal:#3ddc97; --c-teal-dim:#124a38;
+    --c-blue:#4fa3ff;
+    --c-orange:#f7a41d; --c-orange-dim:#5a4113;
+    --good:#3ddc97; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--bg); color:var(--text); font-family:"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif; line-height:1.6;}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px;}
+  nav{position:sticky; top:0; z-index:50; background:rgba(12,16,23,.88); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+  nav .wrap{display:flex; align-items:center; gap:18px; height:52px;}
+  nav .logo{font-weight:700; font-size:15px; white-space:nowrap;}
+  nav .logo b{color:var(--c-teal);}
+  nav a{color:var(--muted); text-decoration:none; font-size:13px; white-space:nowrap;}
+  nav a:hover{color:var(--text);}
+
+  header.hero{padding:64px 0 40px; text-align:center;}
+  header.hero h1{font-size:34px; font-weight:800; letter-spacing:.5px;}
+  header.hero h1 b{color:var(--c-teal);}
+  header.hero p.sub{color:var(--muted); margin-top:12px; font-size:15px;}
+  .hero-nums{display:flex; justify-content:center; gap:14px; margin-top:32px; flex-wrap:wrap;}
+  .hnum{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 24px; min-width:150px;}
+  .hnum .v{font-size:24px; font-weight:800; color:var(--c-teal);}
+  .hnum .l{font-size:12px; color:var(--muted); margin-top:2px;}
+
+  section{padding:44px 0 8px;}
+  h2{font-size:24px; margin-bottom:6px;}
+  h2 .tag{font-size:12px; font-weight:600; color:var(--dim); margin-left:10px; letter-spacing:1px;}
+  .lead{color:var(--muted); font-size:14.5px; margin-bottom:24px; max-width:880px;}
+
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:20px;}
+  .card h3{font-size:16px; margin-bottom:4px;}
+  .card .note{font-size:12.5px; color:var(--dim); margin-bottom:14px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  @media (max-width:860px){ .grid2{grid-template-columns:1fr;} }
+
+  .bars .row{display:grid; grid-template-columns:130px 1fr 150px; align-items:center; gap:12px; margin:10px 0;}
+  .bars .lab{font-size:13px; font-weight:700; text-align:right;}
+  .bars .track{background:var(--panel2); border-radius:6px; height:26px; position:relative; overflow:hidden;}
+  .bars .fill{height:100%; border-radius:6px; transition:width 1s cubic-bezier(.2,.8,.2,1);}
+  .bars .fill.t{background:linear-gradient(90deg,#0f8a5e,var(--c-teal));}
+  .bars .fill.f{background:linear-gradient(90deg,#1d4f80,var(--c-blue));}
+  .bars .fill.p{background:linear-gradient(90deg,#8a5a10,var(--c-orange));}
+  .bars .val{font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums;}
+
+  .metrics{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px;}
+  .metric{background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:16px;}
+  .metric .t{font-size:12.5px; color:var(--muted); margin-bottom:8px;}
+  .metric .v{font-size:22px; font-weight:800; color:var(--c-teal);}
+  .metric .cap{font-size:11.5px; color:var(--dim); margin-top:6px;}
+
+  table{border-collapse:collapse; width:100%; font-size:13.5px;}
+  th,td{padding:8px 12px; text-align:right; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums;}
+  th:first-child,td:first-child{text-align:left;}
+  th{color:var(--muted); font-weight:600; font-size:12.5px;}
+  tr:last-child td{border-bottom:none;}
+  td.good{color:var(--good);} td.warn{color:var(--bad);}
+
+  .chartbox{position:relative;}
+  #lossChart{width:100%; height:auto; display:block;}
+  .legend{display:flex; gap:18px; font-size:13px; color:var(--muted); margin-bottom:8px; flex-wrap:wrap;}
+  .legend i{display:inline-block; width:14px; height:3px; border-radius:2px; margin-right:6px; vertical-align:middle;}
+  .toggle{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-left:auto;}
+  .toggle button{background:var(--panel2); color:var(--muted); border:none; padding:4px 14px; font-size:12.5px; cursor:pointer;}
+  .toggle button.on{background:var(--line); color:var(--text);}
+  #tip{position:absolute; pointer-events:none; background:#1a2438; border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:12.5px; color:var(--text); display:none; z-index:5; white-space:nowrap; box-shadow:0 6px 24px rgba(0,0,0,.4);}
+
+  /* arch diagram */
+  .arch{display:flex; flex-direction:column; align-items:center; gap:8px; padding:10px 0;}
+  .arch .node{background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:8px 16px; text-align:center; min-width:170px;}
+  .arch .node .n{font-weight:700; font-size:13.5px;}
+  .arch .node .s{font-size:11.5px; color:var(--dim);}
+  .arch .arrow{color:var(--dim); font-size:18px;}
+  .arch .opstrip{display:flex; gap:14px; flex-wrap:wrap; justify-content:center;}
+  .arch .op{font-size:11.5px; color:var(--muted); background:var(--panel); border:1px solid var(--line); padding:3px 10px; border-radius:99px;}
+
+  .callout{border-left:3px solid var(--c-teal); background:rgba(61,220,151,.07); border-radius:0 10px 10px 0; padding:14px 18px; font-size:13.5px; color:var(--muted); margin:14px 0;}
+  .callout b{color:var(--text);}
+  .callout.orange{border-color:var(--c-orange); background:rgba(247,164,29,.07);}
+
+  .cmd{background:#0a0e15; border:1px solid var(--line); border-radius:10px; padding:12px 16px; font-family:ui-monospace,Consolas,monospace; font-size:12.5px; color:#9fe8b8; margin:10px 0; overflow-x:auto;}
+  .cmd .p{color:var(--dim);}
+
+  code{background:#0a0e15; padding:1px 6px; border-radius:4px; font-size:12px; color:#b8c7de;}
+
+  footer{margin-top:56px; border-top:1px solid var(--line); padding:26px 0 40px; color:var(--dim); font-size:12.5px; text-align:center;}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <span class="logo"><b>TritNet-CNN</b> · TinyML</span>
+  <a href="#task">任务</a><a href="#arch">架构</a><a href="#quant">三元量化</a><a href="#train">训练</a><a href="#results">精度</a><a href="#confusion">混淆矩阵</a><a href="#storage">存储与延迟</a><a href="#build">构建</a>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <h1>同一个管线的另一种小模型：<b>TinyML 三元 1D-CNN</b></h1>
+  <p class="sub">4 类手势识别 · 3 轴加速度计窗口 · 2,524 参数 · 54,208 MACs · 权重压到 1.6 bit · 单文件训练 + 推理，除 libc 零依赖</p>
+  <div class="hero-nums">
+    <div class="hnum"><div class="v">100.0%</div><div class="l">QAT 验证精度</div></div>
+    <div class="hnum"><div class="v">15.0x</div><div class="l">权重压缩 vs fp32</div></div>
+    <div class="hnum"><div class="v">1.6 bit</div><div class="l">每权重（含缩放）</div></div>
+    <div class="hnum"><div class="v">38.0 µs</div><div class="l">单次推理延迟</div></div>
+  </div>
+  <p class="sub" style="margin-top:18px; font-size:12.5px;">实测于 AMD Ryzen 9 7940H（AVX2，主机编译）· 2026-09-02 运行 <code style="font-size:11px;">zig-out/bin/example-cnn.exe</code> 采集 · 数据集为固定种子确定性合成，无需外部下载</p>
+</div></header>
+
+<section id="task"><div class="wrap">
+  <h2>任务 <span class="tag">GESTURE RECOGNITION</span></h2>
+  <p class="lead">这是 TinyML 社区最经典的传感器任务之一（EdgeImpulse / MLPerf-Tiny 风格）：对一段 3 轴加速度计时间窗做 4 分类。数据由 <code>examples/gesture_cnn.zig</code> 内置的确定性生成器合成，每个类别带随机相位、幅度抖动与逐样本噪声，因此整条管线从固定种子完全可复现，无需外部数据集。</p>
+  <div class="metrics">
+    <div class="metric"><div class="t">输入</div><div class="v">3×128</div><div class="cap">x / y / z 三轴 × 128 采样</div></div>
+    <div class="metric"><div class="t">类别</div><div class="v">4</div><div class="cap">rest / shake / circle / tap</div></div>
+    <div class="metric"><div class="t">样本</div><div class="v">4,000</div><div class="cap">train 3,200 · val 800（每类 1,000）</div></div>
+    <div class="metric"><div class="t">MACs</div><div class="v">54,208</div><div class="cap">每次推理的乘加次数</div></div>
+  </div>
+  <div class="card" style="margin-top:20px;">
+    <h3>四类手势的合成波形</h3>
+    <div class="note">网络必须学波形形状，而不是背样本——每类都有随机相位和幅度抖动，噪声叠加在所有轴上。</div>
+    <div class="grid2">
+      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">rest（静息）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">三轴缓慢低幅漂移，每窗 &lt;0.3 周期，振幅 0.22。</p></div>
+      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">shake（摇晃）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">集中于 x 轴的快速震荡，每窗 8–12 周期，振幅 1.0±0.2。</p></div>
+      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">circle（画圈）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">x/y 正交对，每窗 2–4 周期，z 轴安静。</p></div>
+      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">tap（轻敲）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">随机位置、随机轴上的衰减脉冲（宽度 14–21），振幅 1.4–2.2 带随机符号。</p></div>
+    </div>
+    <div class="callout"><b>数据集可复现：</b>类标签按 <code>idx % 4</code> 轮转填入，再做一次 Fisher-Yates 洗牌，使验证集类别混合均匀。噪声标准差 0.06。</div>
+  </div>
+</div></section>
+
+<section id="arch"><div class="wrap">
+  <h2>网络架构 <span class="tag">2,524 PARAMS · 54,208 MACs</span></h2>
+  <p class="lead">典型的 TinyML 短 1D-CNN：两层卷积（每层接 ReLU + 步长 2 最大池化）后接全连接分类头。所有卷积核与稠密层都量化成 <b style="color:var(--text)">{-1, 0, +1}</b> 三元权重，偏置保持 fp32（共 28 个，占比极小——专门用来吸收三元网格表达不了的东西）。</p>
+  <div class="card">
+    <div class="arch">
+      <div class="node"><div class="n">Input</div><div class="s">3 × 128</div></div>
+      <div class="arrow">▼</div>
+      <div class="node"><div class="n">Conv1D(3→8, k=8)</div><div class="s">→ 8 × 121</div></div>
+      <div class="opstrip"><span class="op">ReLU</span><span class="op">MaxPool(2)</span><span class="op">→ 8 × 60</span></div>
+      <div class="arrow">▼</div>
+      <div class="node"><div class="n">Conv1D(8→16, k=4)</div><div class="s">→ 16 × 57</div></div>
+      <div class="opstrip"><span class="op">ReLU</span><span class="op">MaxPool(2)</span><span class="op">→ 16 × 28</span></div>
+      <div class="arrow">▼</div>
+      <div class="node"><div class="n">Flatten</div><div class="s">→ 448</div></div>
+      <div class="arrow">▼</div>
+      <div class="node"><div class="n">Dense(448→4)</div><div class="s">全连接 + softmax</div></div>
+      <div class="arrow">▼</div>
+      <div class="node"><div class="n">输出</div><div class="s">rest / shake / circle / tap</div></div>
+    </div>
+    <div class="callout orange"><b>参数账目：</b>卷积核 C1·C0·K1 + C2·C1·K2 + 稠密层 4×448 = 2496 个三元权重；加 28 个 fp32 偏置（C1=8 + C2=16 + 输出 4）＝ 2524 总参数。MAC 数 = C1·T1·(C0·K1) + C2·T2·(C1·K2) + 4·FC_IN = 54,208。</div>
+  </div>
+</div></section>
+
+<section id="quant"><div class="wrap">
+  <h2>三元量化 <span class="tag">BITNET · QAT</span></h2>
+  <p class="lead">量化语义与仓库里的 micro-GPT 管线完全一致：先做 fp32 预训练，随后用 <b style="color:var(--text)">absmean 缩放</b>把每个投影张量化为三元，再用 <b style="color:var(--text)">直通估计（STE）</b>做量化感知训练（QAT）把精度补回来。每个卷积核与稠密层按张量独立得一个缩放因子，激活在训练时量化到 8-bit。</p>
+  <div class="card">
+    <h3>BitNet 三值化规则</h3>
+    <table>
+      <tr><th>项</th><th>取值</th></tr>
+      <tr><td>缩放因子</td><td>scale = mean(|W|)，即权重绝对值的均值</td></tr>
+      <tr><td>阈值</td><td>t = scale / 2</td></tr>
+      <tr><td>三值映射</td><td>W &gt; t → +1 · W &lt; -t → -1 · 其余 → 0</td></tr>
+      <tr><td>部署值</td><td>q = trit × scale</td></tr>
+      <tr><td>梯度掩码（STE）</td><td>只在 |W| &lt; 2t 处保留梯度，别处置 0</td></tr>
+      <tr><td>激活量化</td><td>训练时 per-token 8-bit（舍入后 STE 反向为恒等）</td></tr>
+    </table>
+    <div class="callout"><b>为什么偏置保持 fp32：</b>三元网格只能表达 ±scale 和 0 三种值，偏置的作用就是吸收常数偏移——把它们也量化成三元，会凭空引入误差且几乎没有压缩收益（28 个参数 vs 2496 个权重）。</div>
+  </div>
+</div></section>
+
+<section id="train"><div class="wrap">
+  <h2>训练管线 <span class="tag">FP32 PRETRAIN → TERNARY QAT</span></h2>
+  <p class="lead">单进程内依次执行：<b style="color:var(--text)">fp32 预训练</b>（Adam + 余弦学习率，mini-batch 交叉熵，批量 32）→ 记录 <b style="color:var(--text)">朴素 PTQ</b>（直接三值化、不做 QAT）作为对照 → 重置 Adam → <b style="color:var(--text)">BitNet 三元 QAT</b>。下方损失曲线把两段画在一起（x 轴为累计步数，y 轴为对数刻度）。注意 QAT 第 1 步的 loss 从 fp32 收敛态的 0.002 直接跳回 15.66——这就是三值化冲击本身，QAT 随后用 1500 步把它重新压回去。</p>
+  <div class="card chartbox">
+    <div class="legend">
+      <span><i style="background:var(--c-blue)"></i>fp32 阶段（2000 步，4.64 s）</span>
+      <span><i style="background:var(--c-teal)"></i>QAT 阶段（1500 步，4.29 s）</span>
+      <span class="toggle"><button id="btnAvg" class="on">平均 loss</button><button id="btnStep">单步 loss</button></span>
+    </div>
+    <svg id="lossChart" viewBox="0 0 960 340" preserveAspectRatio="none"></svg>
+    <div id="tip"></div>
+    <p class="note" style="margin:8px 0 0;">每 100 步采样一个点（另含第 1 步与最后一步）· 「平均 loss」为批量损失的指数滑动平均（α = 0.01，初值 ln4）· 数据取自 2026-09-02 实测输出</p>
+  </div>
+</div></section>
+
+<section id="results"><div class="wrap">
+  <h2>精度结果 <span class="tag">FLOAT ACTIVATIONS</span></h2>
+  <p class="lead">验证集 800 个样本。朴素 PTQ 直接把精度打到 <b style="color:var(--bad)">65.75%</b>——三类混淆得一团糟；QAT 则把 <b style="color:var(--text)">全部 100%</b> 拉了回来，回收了 fp32→PTQ 精度差距的 <b style="color:var(--text)">99.9%</b>。这就是量化感知训练的价值所在。</p>
+  <div class="card">
+    <div class="bars">
+      <div class="row"><span class="lab f">fp32</span><div class="track"><div class="fill f" data-w="100"></div></div><span class="val">train 100% · val 100%</span></div>
+      <div class="row"><span class="lab p">PTQ（无 QAT）</span><div class="track"><div class="fill p" data-w="65.75"></div></div><span class="val">val 65.75%</span></div>
+      <div class="row"><span class="lab t">QAT</span><div class="track"><div class="fill t" data-w="100"></div></div><span class="val">train 100% · val 100%</span></div>
+    </div>
+    <table style="margin-top:14px;">
+      <tr><th>模型</th><th>训练精度</th><th>验证精度</th><th>验证 loss</th></tr>
+      <tr><td>fp32 baseline</td><td>100.0%</td><td class="good">100.0%</td><td>0.0001</td></tr>
+      <tr><td>朴素 PTQ（ternary）</td><td>—</td><td class="warn">65.75%</td><td>—</td></tr>
+      <tr><td>BitNet 三元 QAT</td><td>100.0%</td><td class="good">100.0%</td><td>0.001324</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>三元权重分布</h3>
+    <div class="note">QAT 训练完成后，统计全部 2496 个三元权重中 -1 / 0 / +1 的占比。接近四分之一权重被剪到 0，这正是三值化的稀疏红利。</div>
+    <div class="bars">
+      <div class="row"><span class="lab p">−1</span><div class="track"><div class="fill p" data-w="42.7"></div></div><span class="val">42.7%</span></div>
+      <div class="row"><span class="lab" style="color:var(--dim)">0</span><div class="track"><div class="fill" data-w="21.2" style="background:linear-gradient(90deg,#2a3a55,#4a5f85)"></div></div><span class="val">21.2%</span></div>
+      <div class="row"><span class="lab t">+1</span><div class="track"><div class="fill t" data-w="36.1"></div></div><span class="val">36.1%</span></div>
+    </div>
+    <div class="callout"><b>结果解读：</b>朴素三值化把部分活跃权重硬切到 0，导致 val 精度崩到 65.75%；QAT 让网络在训练中主动适应三元网格——权重学会把无关紧要的系数归零、把重要的推向 ±1，于是精度与 fp32 完全持平，而每个权重仍只占 1.6 bit。</div>
+  </div>
+</div></section>
+
+<section id="confusion"><div class="wrap">
+  <h2>混淆矩阵 <span class="tag">QAT · VAL SPLIT</span></h2>
+  <p class="lead">800 个验证样本在 QAT 模型上的混淆矩阵（行 = 真实类别，列 = 预测类别）。这是一个近乎完美的对角矩阵——每类都 100% 正确识别。</p>
+  <div class="card">
+    <table>
+      <tr><th></th><th>rest</th><th>shake</th><th>circle</th><th>tap</th><th>recall</th></tr>
+      <tr><td>rest</td><td class="good">197</td><td>0</td><td>0</td><td>0</td><td class="good">100.0%</td></tr>
+      <tr><td>shake</td><td>0</td><td class="good">195</td><td>0</td><td>0</td><td class="good">100.0%</td></tr>
+      <tr><td>circle</td><td>0</td><td>0</td><td class="good">214</td><td>0</td><td class="good">100.0%</td></tr>
+      <tr><td>tap</td><td>0</td><td>0</td><td>0</td><td class="good">194</td><td class="good">100.0%</td></tr>
+    </table>
+  </div>
+</div></section>
+
+<section id="storage"><div class="wrap">
+  <h2>存储与延迟 <span class="tag">PACKED · 5 TRITS/BYTE</span></h2>
+  <p class="lead">三值权重用 <b style="color:var(--text)">5 个三值位/字节</b>的基-3 打包（compilade 的方案，llama.cpp 的 BitNet 也用这套）：编码时对基-3 权重做天花板重缩放，解码时用乘法+移位、免除法。打包后权重从 10,096 字节压到 672 字节，<b style="color:var(--text)">15.0x</b> 小于 fp32。</p>
+  <div class="card">
+    <h3>存储对比</h3>
+    <div class="bars">
+      <div class="row"><span class="lab f">fp32 权重</span><div class="track"><div class="fill f" data-w="100"></div></div><span class="val">10,096 B</span></div>
+      <div class="row"><span class="lab p">朴素 2-bit</span><div class="track"><div class="fill p" data-w="7.3"></div></div><span class="val">736 B</span></div>
+      <div class="row"><span class="lab t">打包 5-trits/byte</span><div class="track"><div class="fill t" data-w="6.7"></div></div><span class="val">672 B（15.0x）</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>延迟与吞吐（主机 CPU，float 激活）</h3>
+    <div class="note">20,000 次推理的平均值，200 次预热后计时。</div>
+    <table>
+      <tr><th>权重</th><th>延迟 / 推理</th><th>吞吐（MACs/s）</th></tr>
+      <tr><td>fp32 权重</td><td>38.77 µs</td><td>1398.4M</td></tr>
+      <tr><td>三元权重</td><td class="good">38.00 µs</td><td>1426.6M</td></tr>
+    </table>
+    <div class="callout"><b>注意：</b>这是<em>主机</em> CPU 上跑 float 激活的参考延迟——x86 上 fp32 靠 AVX2 FMA，查表乘加被优化得很好，三元核只是基本持平（38.00 vs 38.77 µs，2% 差异在运行间噪声内），并没有因为量化而变快。真正的收益是<b>把权重从 10KB 压到 672B</b>（对缓存 / 片上存储 / 指令流都是质变），以及三值核可用「加/跳过/减」的加法替代乘法。在真正的 MCU 上，三元核的免乘法优势才会体现为吞吐优势。</div>
+  </div>
+
+  <div class="card">
+    <h3>打包往返校验</h3>
+    <table>
+      <tr><th>检查项</th><th>值</th></tr>
+      <tr><td>导出前 val 精度 / loss</td><td>100.00% / 0.001324</td></tr>
+      <tr><td>重载后 val 精度 / loss</td><td>100.00% / 0.001324</td></tr>
+      <tr><td>结果</td><td class="good">round-trip: OK（无损）</td></tr>
+    </table>
+    <p class="note" style="margin-top:10px;">导出后重新加载打包文件并重跑验证集，必须逐点复现导出前的精度与 loss——这证明打包编码完全无损。</p>
+  </div>
+</div></section>
+
+<section id="build"><div class="wrap">
+  <h2>构建与运行 <span class="tag">BUILD</span></h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>一条命令跑完整个管线</h3>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast cnn<br><span class="p">→</span> 训练 → 量化 → 验证 → 导出模型+验证集</div>
+      <div class="cmd"><span class="p">$</span> ./zig-out/bin/example-cnn.exe<br><span class="p">→</span> modeldata/cnn1d_packed.bin（672 B）<br><span class="p">→</span> modeldata/cnn1d_valset.bin（验证集）</div>
+      <div class="cmd"><span class="p">$</span> zig build test <span class="p"># 卷积/池化/梯度/端到端梯度检查 单元测试</span></div>
+    </div>
+    <div class="card">
+      <h3>双部署路径</h3>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">除了 Zig 主管线，仓库还提供 <code>c/cnn1d_inference.c</code> 作为<em>独立</em>的部署引擎：它读取 <code>modeldata/cnn1d_packed.bin</code> 与验证集，解码打包 trits 后以 <b style="color:var(--text)">add / skip / subtract</b> 方式跑三元核——不用任何逐权重浮点表。两条路径必须逐点复现相同的验证精度与混淆矩阵。</p>
+      <div class="cmd"><span class="p">$</span> make cnn-c<br><span class="p">$</span> ./cnn1d-c modeldata/cnn1d_packed.bin modeldata/cnn1d_valset.bin</div>
+    </div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  数据于 2026-09-02 在 AMD Ryzen 9 7940H 上运行 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/example-cnn.exe</code> 实测采集 · TritNet-MCU 仓库 · TinyML 1D-CNN 可视化页
+</div></footer>
+
+<script>
+// 2026-09-02 实测（cnn_run.txt，AMD Ryzen 9 7940H）。
+// x 轴为累计步数：fp32 阶段 1..2000，QAT 阶段 2001..3500（QAT 内部步号 1..1500 + 2000）。
+// avg 为批量损失的指数滑动平均（running = running*0.99 + batch_loss*0.01，初值 ln4）。
+const DATA = {
+  steps:[1,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500,1600,1700,1800,1900,2000,
+         2001,2100,2200,2300,2400,2500,2600,2700,2800,2900,3000,3100,3200,3300,3400,3500],
+  fp32_loss:[52.0957,0.1646,0.0348,0.0224,0.0065,0.0055,0.0057,0.0065,0.0032,0.0029,0.0034,0.0015,0.0014,0.0026,0.0017,0.0022,0.0013,0.0020,0.0033,0.0011,0.0020],
+  fp32_avg:[1.9070,4.3036,1.6103,0.6046,0.2299,0.0897,0.0369,0.0166,0.0086,0.0052,0.0036,0.0029,0.0025,0.0022,0.0020,0.0019,0.0018,0.0017,0.0017,0.0017,0.0017],
+  qat_loss:[15.6600,0.8657,0.3514,0.1809,0.1276,0.0977,0.0456,0.0699,0.0499,0.0423,0.0441,0.0264,0.0481,0.0559,0.0343,0.0484],
+  qat_avg:[1.5426,2.0944,1.1321,0.5810,0.3158,0.1890,0.1257,0.0920,0.0719,0.0610,0.0539,0.0502,0.0472,0.0459,0.0449,0.0437]
+};
+</script>
+<script>
+/* ---- loss chart：fp32（蓝）+ QAT（青）两段，对数 y 轴 ---- */
+(function(){
+  const svg = document.getElementById('lossChart'), tip = document.getElementById('tip');
+  const W = 960, H = 340, PL = 50, PR = 14, PT = 16, PB = 30;
+  const S = DATA.steps, LAST = S[S.length-1];
+  const N1 = DATA.fp32_loss.length;               // fp32 段点数（QAT 段从下标 N1 起）
+  let mode = 'avg';
+
+  function Xa(i){ return PL + (W-PL-PR) * (S[i]-1) / (LAST-1); }
+
+  function draw(){
+    const v1 = DATA[mode==='avg'?'fp32_avg':'fp32_loss'];
+    const v2 = DATA[mode==='avg'?'qat_avg':'qat_loss'];
+    let lo = Infinity, hi = -Infinity;
+    v1.forEach(v=>{lo=Math.min(lo,v);hi=Math.max(hi,v);});
+    v2.forEach(v=>{lo=Math.min(lo,v);hi=Math.max(hi,v);});
+    const dlo = Math.floor(Math.log10(lo)), dhi = Math.ceil(Math.log10(hi));
+    const lg = Math.log10;
+    const Y = v => PT + (H-PT-PB) * (1 - (lg(v)-dlo) / (dhi-dlo));
+    const xd = (Xa(N1-1)+Xa(N1))/2;               // 阶段分隔线
+
+    let g = '<rect x="'+xd+'" y="'+PT+'" width="'+(W-PR-xd)+'" height="'+(H-PT-PB)+'" fill="rgba(61,220,151,.05)"/>';
+    for (let d=dlo; d<=dhi; d++){
+      const v = Math.pow(10,d), y = Y(v);
+      g += '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" stroke="#22304a" stroke-width="1"/>';
+      g += '<text x="'+(PL-8)+'" y="'+(y+4)+'" fill="#5b6a82" font-size="11" text-anchor="end">'+(v<1?v.toString():v.toFixed(0))+'</text>';
+    }
+    [[1,'1'],[1000,'1k'],[2000,'2k'],[3000,'3k']].forEach(([st,lab])=>{
+      const x = Xa(S.indexOf(st));
+      g += '<text x="'+x+'" y="'+(H-8)+'" fill="#5b6a82" font-size="11" text-anchor="middle">'+lab+'</text>';
+    });
+    g += '<line x1="'+xd+'" y1="'+PT+'" x2="'+xd+'" y2="'+(H-PB)+'" stroke="#5b6a82" stroke-width="1" stroke-dasharray="4 4"/>';
+    g += '<text x="'+(xd-10)+'" y="'+(PT+12)+'" fill="#4fa3ff" font-size="11.5" text-anchor="end" font-weight="700">fp32</text>';
+    g += '<text x="'+(xd+10)+'" y="'+(PT+12)+'" fill="#3ddc97" font-size="11.5" font-weight="700">QAT</text>';
+    const poly = (arr,off,col) => '<polyline fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round" points="'+
+      arr.map((v,j)=>Xa(off+j).toFixed(1)+','+Y(v).toFixed(1)).join(' ')+'"/>';
+    g += poly(v1,0,'var(--c-blue)') + poly(v2,N1,'var(--c-teal)');
+    g += '<line id="cross" x1="0" y1="'+PT+'" x2="0" y2="'+(H-PB)+'" stroke="#8b98ad" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>';
+    svg.innerHTML = g;
+    return Y;
+  }
+  let Y = draw();
+  document.getElementById('btnAvg').onclick = e => { mode='avg'; e.target.classList.add('on'); document.getElementById('btnStep').classList.remove('on'); Y = draw(); };
+  document.getElementById('btnStep').onclick = e => { mode='step'; e.target.classList.add('on'); document.getElementById('btnAvg').classList.remove('on'); Y = draw(); };
+
+  svg.addEventListener('mousemove', ev => {
+    const r = svg.getBoundingClientRect();
+    const fx = (ev.clientX - r.left) / r.width * W;
+    if (fx < PL || fx > W-PR) { tip.style.display='none'; svg.querySelector('#cross').style.display='none'; return; }
+    const t = (fx-PL)/(W-PL-PR)*(LAST-1)+1;
+    let i = 0, best = Infinity;
+    S.forEach((s,j)=>{ const d=Math.abs(s-t); if(d<best){best=d;i=j;} });
+    const x = Xa(i), y = Y(DATA[mode==='avg'?(i<N1?'fp32_avg':'qat_avg'):(i<N1?'fp32_loss':'qat_loss')][i<N1?i:i-N1]);
+    const cross = svg.querySelector('#cross');
+    cross.setAttribute('x1',x); cross.setAttribute('x2',x); cross.style.display='';
+    const q = i >= N1, name = q?'QAT':'fp32', col = q?'var(--c-teal)':'var(--c-blue)';
+    const L = (q?DATA.qat_loss[i-N1]:DATA.fp32_loss[i]).toFixed(4);
+    const A = (q?DATA.qat_avg[i-N1]:DATA.fp32_avg[i]).toFixed(4);
+    tip.innerHTML = 'step '+S[i]+' · <span style="color:'+col+';font-weight:700">'+name+'</span><br>loss '+L+' · avg '+A;
+    tip.style.display = 'block';
+    const px = x / W * r.width;
+    tip.style.left = Math.min(r.width-160, Math.max(6, px+12)) + 'px';
+    tip.style.top = '40px';
+  });
+  svg.addEventListener('mouseleave', () => { tip.style.display='none'; svg.querySelector('#cross').style.display='none'; });
+})();
+</script>
+<script>
+(function(){
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.querySelectorAll('.fill').forEach(f => f.style.width = f.dataset.w + '%');
+      io.unobserve(e.target);
+    }
+  }), {threshold:.3});
+  document.querySelectorAll('.bars').forEach(b => {
+    b.querySelectorAll('.fill').forEach(f => f.style.width = '0%');
+    io.observe(b);
+  });
+})();
+</script>
+</body>
+</html>
