@@ -13,7 +13,7 @@ Based on:
   - BitNetMCU (ternary quantization for MCU)
 
 Usage:
-  python bitnet_gpt_train.py [--params trainingparameters.yaml]
+  python examples/gpt_names/python/train_qat.py [--steps N] [--data PATH]
 """
 
 import torch
@@ -436,9 +436,9 @@ def train(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='BitNet-GPT Ternary QAT Training')
-    parser.add_argument('--data', type=str, default='data/names.txt',
+    parser.add_argument('--data', type=str, default='examples/gpt_names/data/names.txt',
                         help='Training data file (one name per line)')
-    parser.add_argument('--output', type=str, default='modeldata/bitnet_gpt.pth',
+    parser.add_argument('--output', type=str, default='examples/gpt_names/modeldata/bitnet_gpt.pth',
                         help='Output checkpoint path')
     parser.add_argument('--steps', type=int, default=20000,
                         help='Number of training steps')

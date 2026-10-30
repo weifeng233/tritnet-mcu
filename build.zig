@@ -15,13 +15,15 @@ pub fn build(b: *std.Build) void {
     });
 
     // fp32 reference baseline: the original microGPT in Zig, A/B twin of
-    // c/microgpt.c and the sanity check for the framework's fp32 pretrain leg
+    // examples/gpt_names/c/microgpt.c and the sanity check for the framework's
+    // fp32 pretrain leg
     const fp32_mod = b.createModule(.{
-        .root_source_file = b.path("src/fp32.zig"),
+        .root_source_file = b.path("examples/gpt_names/fp32.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
+    fp32_mod.addImport("framework", fw_mod);
     const fp32_exe = b.addExecutable(.{
         .name = "fp32-baseline",
         .root_module = fp32_mod,
@@ -30,7 +32,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(fp32_exe);
 
     const fp32_cmd = b.addRunArtifact(fp32_exe);
-    if (b.args) |args| fp32_cmd.addArgs(args) else fp32_cmd.addArg("data/names.txt");
+    if (b.args) |args| fp32_cmd.addArgs(args) else fp32_cmd.addArg("examples/gpt_names/data/names.txt");
     const run_step = b.step("run", "Run the fp32 baseline trainer");
     run_step.dependOn(&fp32_cmd.step);
 
@@ -54,7 +56,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
-    c_mod.addCSourceFile(.{ .file = b.path("c/microgpt.c"), .flags = c_flags });
+    c_mod.addCSourceFile(.{ .file = b.path("examples/gpt_names/c/microgpt.c"), .flags = c_flags });
     const c_exe = b.addExecutable(.{
         .name = "microgpt-c",
         .root_module = c_mod,
@@ -64,9 +66,10 @@ pub fn build(b: *std.Build) void {
 
     // Examples: thin per-model drivers over the framework. Each one runs the
     // whole pipeline -- fp32 pretrain -> ternary QAT -> validation -> packed
-    // export -> round-trip check -- and writes its artifacts to modeldata/.
+    // export -> round-trip check -- and writes its artifacts to its own
+    // examples/<model>/modeldata/.
     const gpt_mod = b.createModule(.{
-        .root_source_file = b.path("examples/gpt_names.zig"),
+        .root_source_file = b.path("examples/gpt_names/gpt_names.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -80,7 +83,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(gpt_exe);
 
     const gpt_cmd = b.addRunArtifact(gpt_exe);
-    if (b.args) |args| gpt_cmd.addArgs(args) else gpt_cmd.addArg("data/names.txt");
+    if (b.args) |args| gpt_cmd.addArgs(args) else gpt_cmd.addArg("examples/gpt_names/data/names.txt");
     const gpt_step = b.step("example-gpt", "Example: micro-GPT names (train -> quantize -> pack)");
     gpt_step.dependOn(&gpt_cmd.step);
 
@@ -175,7 +178,7 @@ pub fn build(b: *std.Build) void {
     const run_fw_tests = b.addRunArtifact(fw_tests);
 
     const gpt_test_mod = b.createModule(.{
-        .root_source_file = b.path("examples/gpt_names.zig"),
+        .root_source_file = b.path("examples/gpt_names/gpt_names.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,

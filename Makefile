@@ -32,9 +32,9 @@ endif
 # implied by -Ofast, so it is not repeated.
 CFLAGS  ?= -Ofast $(ARCHFLAGS) -Wall
 LDLIBS  := -lm
-BIN     := microgpt-c
-SRC     := c/microgpt.c
-DATA    := data/names.txt
+BIN     := examples/gpt_names/microgpt-c
+SRC     := examples/gpt_names/c/microgpt.c
+DATA    := examples/gpt_names/data/names.txt
 
 # C deployment engines: the framework's deploy leg. Each engine consumes the
 # packed artifacts written by an example (`zig build --release=fast

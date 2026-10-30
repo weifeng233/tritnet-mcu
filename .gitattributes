@@ -17,4 +17,4 @@
 reference/**            linguist-vendored
 reference/**            linguist-documentation
 modeldata/fixtures/**   linguist-vendored
-c/microgpt.c            linguist-vendored
+examples/gpt_names/c/microgpt.c  linguist-vendored

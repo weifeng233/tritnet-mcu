@@ -11,7 +11,7 @@ Weight packing: Base-3 encoding (10 trits per uint16 word)
 Based on BitNetMCU's exportquant.py packing scheme.
 
 Usage:
-  python bitnet_gpt_export.py --checkpoint modeldata/bitnet_gpt.pth
+  python examples/gpt_names/python/export.py --checkpoint examples/gpt_names/modeldata/bitnet_gpt.pth
 """
 
 import torch
@@ -352,9 +352,9 @@ def generate_c_header(checkpoint_path, output_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Export the QAT checkpoint to the C model header (c/model.h)')
-    parser.add_argument('--checkpoint', type=str, default='modeldata/bitnet_gpt.pth',
+    parser.add_argument('--checkpoint', type=str, default='examples/gpt_names/modeldata/bitnet_gpt.pth',
                         help='Path to model checkpoint')
-    parser.add_argument('--output', type=str, default='c/model.h',
+    parser.add_argument('--output', type=str, default='examples/gpt_names/c/model.h',
                         help='Output C header file')
     args = parser.parse_args()
 
