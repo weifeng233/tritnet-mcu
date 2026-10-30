@@ -37,26 +37,48 @@ every claim in it points at something reproducible.
   what they skipped; with `-Drequire-parity=true` (what CI uses) a missing model is a
   failure instead of a green build that tested nothing.
 - `python/export.py` imported `bitnet_gpt_train`, which does not exist; it now imports
-  `train_qat` and regenerates `c/model.h` byte for byte from the committed checkpoint.
+  `train_qat`, and `SOURCE_DATE_EPOCH` pins the header timestamp so two runs can be
+  compared with a plain `diff`. With the epoch set, the regenerated `c/model.h` matches
+  the committed one except for that one line.
 - `weights.load` reports `FileNotFound` rather than folding every read error into
   `Truncated`, so "not downloaded" and "corrupt" are different messages.
+- The CNN artifact (`CNN1Q002`) gained the footer the ADRs claimed it already had: the
+  trainer's val accuracy, which `c/cnn1d_inference.c` recomputes from the trits and
+  compares. Corrupting the artifact now exits non-zero instead of printing 24.62% and
+  returning 0.
+- `TRTL` rejects trailing bytes, `TRFX` validates its version byte, and the fixture
+  reader bounds-checks every length field: a truncated fixture is an error, not a panic.
 
 ### Changed
 
 - **`LICENSE`** now names this repository's author instead of the author of the
   upstream microGPT-C, and points at `THIRD_PARTY.md`. **`THIRD_PARTY.md`** is new and
   records every upstream, its license, and whether it is vendored or merely credited.
-- **`reference/BitNetMCU`** (GPL-3.0) and **`reference/mlp-mcu`** (unlicensed early
-  prototype) are gone from the tree; history was rewritten before publishing so the
-  GPL tree never appears in the public repository. `reference/timestral` now carries
+- **`reference/BitNetMCU`** (GPL-3.0) is gone from the tree, and history was rewritten
+  before publication so it never appears in the public repository. **`reference/mlp-mcu`**
+  is also gone from the tree, but it is this author's own earlier prototype (see
+  `THIRD_PARTY.md`), kept in history for provenance — it was removed because the Zig
+  framework supersedes it, not for licensing reasons. `reference/timestral` now carries
   its Apache-2.0 `LICENSE`, and `reference/sketch-a-series` says plainly that it has no
   license of its own.
 - **Generated artifacts left git**: the 2.3 MB of packed/ptq/forecast binaries are
   rebuilt by `make quantize-timestral` and published as release assets. Fixtures and
   eval records stay committed, because a clean clone has to be able to test itself.
+- **Throughput numbers now carry their conditions.** The old README quoted 5,491,565
+  tok/sec without saying which power plan produced it; on 2026-10-30 the same binaries
+  measured 8.44 M on 高性能 and ~4.0 M on 平衡. The condition is now part of the table,
+  because the plan is worth more than every optimization in this repository combined.
 
-## v0.1.0 — 2026-10-30
+## Pre-standardization snapshot — 2026-10-30
 
-First tagged snapshot: the Timestral deployment and the ternary quantization work, as
-it stood before standardization. Kept so that the cleanup above is a diff and not a
-rewrite of history.
+The Timestral deployment and ternary quantization work as it stood before the cleanup
+above. It is not published as a tag: at that point `LICENSE` still carried the
+inherited microGPT-C copyright line, `THIRD_PARTY.md` did not exist, and
+`reference/mlp-mcu` had no license header, so the snapshot did not meet its own
+licensing claim and had no business being the thing someone checks out first.
+
+The commit is still an ancestor of `main` (reachable with `git log`), and the local
+tags `v0.1.0` / `v0.1.0-pre-standardize` point at it for rollback. Commits before the
+licensing change carry the inherited microGPT-C copyright line; that is a record of
+history, not a statement about the current license.
+

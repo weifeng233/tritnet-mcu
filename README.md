@@ -302,9 +302,15 @@ whose logits match it to within fp32 rounding.
 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) covers how that path works
 and what limits it ([中文版](docs/PERFORMANCE.zh-CN.md)).
 
-| machine | backend | tok/sec |
-| --- | --- | --- |
-| AMD Ryzen 9 7940H | AVX2 | 5,491,565 |
+| machine | backend | tok/sec | conditions |
+| --- | --- | --- | --- |
+| AMD Ryzen 9 7940H | Zig fp32, AVX2 | 8,441,952 | median of 5, 高性能 power plan, 2026-10-30 |
+| AMD Ryzen 9 7940H | C fp32, AVX2 | 8,217,680 | same session, same flags |
+
+The same two binaries measure ~4.0 M tok/sec on this laptop's 平衡 (balanced) power
+plan, so the plan alone is worth about 2x — a bigger effect than any code change in
+this repository. Numbers without that condition are not comparable, which is why the
+condition is now part of the table.
 
 ## Legacy PyTorch path
 

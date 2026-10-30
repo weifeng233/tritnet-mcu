@@ -54,23 +54,34 @@ minimum, so there is no idle slot left to fill: the machine is busy, not
 waiting. Speedups therefore have to come from issuing fewer instructions
 rather than from scheduling them better.
 
-Single-threaded, on the benchmark's 5M token sampling loop:
+Single-threaded, on the benchmark's 5M token sampling loop. Both binaries are the ones
+`zig build --release=fast` produces, measured in the same session on 2026-10-30:
 
-| machine | backend | tok/sec | |
+| machine | backend | tok/sec | conditions |
 | --- | --- | --- | --- |
-| AMD Ryzen 9 7940H | AVX2 | 5,491,565 | median of 5 runs |
+| AMD Ryzen 9 7940H | Zig fp32, AVX2 | 8,441,952 | median of 5 runs, 高性能 power plan |
+| AMD Ryzen 9 7940H | C fp32, AVX2 | 8,217,680 | same session, same machine flags |
+
+**The power plan matters more than anything in this file.** The same two binaries
+measure roughly 4.0 M tok/sec on this laptop's 平衡 (balanced) plan and 8.4 M on 高性能:
+a factor of two, larger than every optimization below combined. An earlier revision of
+this page quoted 5,491,565 tok/sec without saying which plan produced it; that number
+was not reproducible on 2026-10-30 and has been replaced rather than explained away.
 
 ## Compiler
 
-The Zig build (`zig build --release=fast`) is `ReleaseFast` (`-Ofast` semantics).
-On the AMD Ryzen 9 7940H the two zig-build binaries match within
-run-to-run noise: 5.49M (`zig fp32+AVX2`) against 5.39M (`c fp32+AVX2`)
-tok/sec, medians of 5 runs on the 5M-token loop. The Makefile still
-defaults to `zig cc`, Zig's drop-in clang; built through the Makefile the
-same C source measures 5.81M, while gcc at `-Ofast` measures 5.23M —
-zig's clang is roughly 11% faster (medians of 5 runs each). `make
-CC=gcc` reproduces the gcc numbers. Session-to-session drift on this box
-is a few percent, so compare numbers from the same measurement session.
+The Zig build (`zig build --release=fast`) is `ReleaseFast` (`-Ofast` semantics). On the
+AMD Ryzen 9 7940H, the three ways to compile the C baseline — `zig build`, `make` (which
+uses `zig cc`), and `make CC=gcc` — land within a few percent of each other: in one
+2026-10-30 session the medians of five runs were 8.22 M (`zig build`), 7.92 M
+(`make`, `zig cc`) and 8.09 M (`make CC=gcc`). The spread between those three was
+smaller than the spread between runs of a single binary on a thermally limited laptop,
+so no compiler is "11% faster" in a way that survives a fresh session.
+
+What does survive: the Zig and C baselines agree within ~3% under identical flags, which
+is the property worth checking — the port is not quietly slower than the C it came from.
+Compare numbers from one session, and record the power plan.
+
 
 The AVX2 path is the less tuned of the two. Every constant in the NEON
 path was chosen by A/B measurement on ARM hardware and almost none of

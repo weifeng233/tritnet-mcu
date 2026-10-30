@@ -46,6 +46,17 @@ zig-out/bin/timestral-cli eval timestral_packed.bin --json eval.json
 ## Upgrading
 
 The packed format is `TRTL` v2; a v1 file is rejected with `BadVersion` rather than
-guessed at. Anyone who was on the pre-standardization snapshot (`v0.1.0`) should note
-that history was rewritten before publication to drop the vendored GPL tree, so old
-commit hashes no longer resolve.
+guessed at. The example containers moved to `CNN1Q002` (the CNN artifact gained the
+accuracy footer its C engine now checks); `CNN1Q001` files are rejected with
+`bad model magic`, and the committed `modeldata/cnn1d_packed.bin` is already the new
+format — rebuild it with `zig build --release=fast example-cnn`.
+
+There is no published pre-standardization snapshot. The work before the cleanup above
+is an ancestor of `main` (reachable with `git log`), but it is not tagged on the remote:
+at that point the `LICENSE` line still named the author of microGPT-C and
+`THIRD_PARTY.md` did not exist. History was rewritten before publication to drop the
+vendored GPL tree, so old commit hashes from before 2026-10-30 do not resolve.
+
+This tag points at the commit that includes CI, so the badge and the workflow it links
+to describe the same tree the artifacts were built from.
+
