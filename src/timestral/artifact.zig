@@ -228,5 +228,133 @@ pub fn load(backing: std.mem.Allocator, io: std.Io, path: []const u8) !model.Mod
     errdefer m.deinit();
     var dec = Decoder{ .r = &r, .alloc = m.arenaAlloc() };
     try walk(&m, &dec);
+    // The canonical order is the schema, so a file that ends early is corrupt and a
+    // file with bytes left over was written by something that does not agree with
+    // this reader. Silently ignoring the tail hides exactly that disagreement.
+    if (r.pos != r.data.len) return error.TrailingBytes;
     return m;
+}
+
+// ---------------------------------------------------------------------------
+// tests
+// ---------------------------------------------------------------------------
+
+const testing = std.testing;
+
+/// Fill one matrix with a deterministic pattern. Ternary matrices exercise the
+/// kind-1 record; fp32 matrices exercise the kind-0 one.
+fn fillMatrix(alloc: std.mem.Allocator, w: *model.Matrix, rows: usize, cols: usize, tern: bool, seed: f32) !void {
+    w.rows = rows;
+    w.cols = cols;
+    w.tern = tern;
+    if (!tern) {
+        w.f32s = try alloc.alloc(f32, rows * cols);
+        for (w.f32s, 0..) |*v, i| v.* = seed + @as(f32, @floatFromInt(i % 17)) * 0.125;
+        return;
+    }
+    w.trits = try alloc.alloc(i8, rows * cols);
+    w.scales = try alloc.alloc(f32, rows);
+    for (w.trits, 0..) |*t, i| t.* = @intCast(@as(i32, @intCast((i * 7) % 3)) - 1);
+    for (w.scales, 0..) |*s, i| s.* = seed + @as(f32, @floatFromInt(i)) * 0.5;
+}
+
+fn fillVec(alloc: std.mem.Allocator, out: *[]f32, n: usize, seed: f32) !void {
+    out.* = try alloc.alloc(f32, n);
+    for (out.*, 0..) |*v, i| v.* = seed - @as(f32, @floatFromInt(i)) * 0.25;
+}
+
+test "record layout round-trips a small model without a checkpoint" {
+    // The published format is claims in a document; this test is the document
+    // executed. It builds a model small enough to fit in a test, writes every
+    // record kind (fp32 vector, dense matrix, ternary matrix) in the canonical
+    // order, reads it back and compares values. If a writer or reader changes the
+    // record layout, this fails here -- before anyone writes a reader from the doc.
+    var cfg = model.Config{
+        .patch_size = 4,
+        .d_model = 8,
+        .num_heads = 2,
+        .mlp_hidden = 16,
+        .n_layers = 2,
+        .n_knots = 5,
+        .block_size = 4,
+        .rope_dim = 4,
+        .width_scale = 1.25,
+        .use_asinh = false,
+        .attend_missing = true,
+    };
+    // one time-axis layer and one mixed layer, so the axis-dependent record count
+    // is exercised too
+    cfg.schedule[0] = .time;
+    cfg.schedule[1] = .time_variate;
+    for (0..cfg.n_knots) |i| cfg.knots[i] = 0.01 + 0.2 * @as(f32, @floatFromInt(i));
+
+    var m = try model.Model.create(testing.allocator, cfg);
+    defer m.deinit();
+    const alloc = m.arenaAlloc();
+
+    const d = cfg.d_model;
+    try fillMatrix(alloc, &m.patch.hidden, 4, 2 * cfg.patch_size, true, 0.5);
+    try fillVec(alloc, &m.patch.hidden_b, 4, 0.25);
+    try fillMatrix(alloc, &m.patch.out, d, 4, true, 0.75);
+    try fillVec(alloc, &m.patch.out_b, d, 0.125);
+    // one dense (never ternarized) matrix, so both record kinds are covered
+    try fillMatrix(alloc, &m.patch.res, d, 2 * cfg.patch_size, false, 1.0);
+    try fillVec(alloc, &m.patch.res_b, d, 2.0);
+    try fillVec(alloc, &m.forecast_query, d, 3.0);
+
+    for (m.layers, 0..) |*l, li| {
+        for (l.attn[0..l.kind.axes().len], 0..) |*a, ai| {
+            try fillMatrix(alloc, &a.wqkv, 3 * d, d, true, 0.1 * @as(f32, @floatFromInt(li + ai + 1)));
+            try fillMatrix(alloc, &a.wO, d, d, true, 0.2);
+            try fillMatrix(alloc, &a.gate, 2 * cfg.mlp_hidden, d, true, 0.3);
+            try fillVec(alloc, &l.attn_norm[ai], d, 1.5);
+        }
+        try fillMatrix(alloc, &l.w12, 2 * cfg.mlp_hidden, d, true, 0.4);
+        try fillMatrix(alloc, &l.w3, d, cfg.mlp_hidden, true, 0.6);
+        try fillVec(alloc, &l.mlp_norm, d, 1.75);
+    }
+    try fillVec(alloc, &m.out_norm, d, 2.5);
+    try fillMatrix(alloc, &m.head.hidden, 2 * d, d, true, 0.8);
+    try fillMatrix(alloc, &m.head.out, d, 2 * d, true, 0.9);
+    try fillMatrix(alloc, &m.head.res, d, d, true, 0.05);
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.testing.io, &buf);
+    const path = try std.fs.path.join(testing.allocator, &.{ buf[0..n], "tiny_artifact.bin" });
+    defer testing.allocator.free(path);
+
+    const written = try save(&m, testing.allocator, std.testing.io, path);
+    var back = try load(testing.allocator, std.testing.io, path);
+    defer back.deinit();
+
+    // the loader rejects trailing bytes, so reaching here means the byte count the
+    // writer produced is exactly the byte count the canonical order predicts
+    try testing.expect(written > 0);
+    try testing.expectEqual(m.cfg.patch_size, back.cfg.patch_size);
+    try testing.expectEqual(m.cfg.d_model, back.cfg.d_model);
+    try testing.expectEqual(m.cfg.n_layers, back.cfg.n_layers);
+    try testing.expectEqual(m.cfg.width_scale, back.cfg.width_scale);
+    try testing.expectEqual(m.cfg.attend_missing, back.cfg.attend_missing);
+    try testing.expectEqualSlices(model.Kind, cfg.schedule[0..cfg.n_layers], back.cfg.schedule[0..cfg.n_layers]);
+    try testing.expectEqualSlices(f32, cfg.knots[0..cfg.n_knots], back.cfg.knots[0..cfg.n_knots]);
+
+    try testing.expectEqualSlices(f32, m.patch.res.f32s, back.patch.res.f32s); // dense record
+    try testing.expectEqualSlices(i8, m.patch.hidden.trits, back.patch.hidden.trits); // ternary record
+    try testing.expectEqualSlices(f32, m.patch.hidden.scales, back.patch.hidden.scales);
+    try testing.expectEqualSlices(f32, m.forecast_query, back.forecast_query);
+    try testing.expectEqualSlices(f32, m.out_norm, back.out_norm);
+
+    for (m.layers, back.layers, 0..) |a, b, li| {
+        try testing.expectEqual(a.kind, b.kind);
+        try testing.expectEqualSlices(f32, a.mlp_norm, b.mlp_norm);
+        try testing.expectEqualSlices(i8, a.w12.trits, b.w12.trits);
+        for (a.attn[0..a.kind.axes().len], b.attn[0..b.kind.axes().len], 0..) |x, y, ai| {
+            try testing.expectEqualSlices(i8, x.wqkv.trits, y.wqkv.trits);
+            try testing.expectEqualSlices(f32, x.wqkv.scales, y.wqkv.scales);
+            try testing.expectEqualSlices(f32, a.attn_norm[ai], b.attn_norm[ai]);
+            _ = li;
+        }
+    }
 }
