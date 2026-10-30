@@ -277,13 +277,13 @@
     <div class="card">
       <h3>一条命令跑完整个管线</h3>
       <div class="cmd"><span class="p">$</span> zig build --release=fast cnn<br><span class="p">→</span> 训练 → 量化 → 验证 → 导出模型+验证集</div>
-      <div class="cmd"><span class="p">$</span> ./zig-out/bin/example-cnn.exe<br><span class="p">→</span> modeldata/cnn1d_packed.bin（672 B）<br><span class="p">→</span> modeldata/cnn1d_valset.bin（验证集）</div>
+      <div class="cmd"><span class="p">$</span> ./zig-out/bin/example-cnn.exe<br><span class="p">→</span> examples/gesture_cnn/modeldata/cnn1d_packed.bin（672 B）<br><span class="p">→</span> examples/gesture_cnn/modeldata/cnn1d_valset.bin（验证集）</div>
       <div class="cmd"><span class="p">$</span> zig build test <span class="p"># 卷积/池化/梯度/端到端梯度检查 单元测试</span></div>
     </div>
     <div class="card">
       <h3>双部署路径</h3>
-      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">除了 Zig 主管线，仓库还提供 <code>c/cnn1d_inference.c</code> 作为<em>独立</em>的部署引擎：它读取 <code>modeldata/cnn1d_packed.bin</code> 与验证集，解码打包 trits 后以 <b style="color:var(--text)">add / skip / subtract</b> 方式跑三元核——不用任何逐权重浮点表。两条路径必须逐点复现相同的验证精度与混淆矩阵。</p>
-      <div class="cmd"><span class="p">$</span> make cnn-c<br><span class="p">$</span> ./cnn1d-c modeldata/cnn1d_packed.bin modeldata/cnn1d_valset.bin</div>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">除了 Zig 主管线，仓库还提供 <code>examples/gesture_cnn/c/cnn1d_inference.c</code> 作为<em>独立</em>的部署引擎：它读取 <code>examples/gesture_cnn/modeldata/cnn1d_packed.bin</code> 与验证集，解码打包 trits 后以 <b style="color:var(--text)">add / skip / subtract</b> 方式跑三元核——不用任何逐权重浮点表。两条路径必须逐点复现相同的验证精度与混淆矩阵。</p>
+      <div class="cmd"><span class="p">$</span> make cnn-c<br><span class="p">$</span> ./examples/gesture_cnn/cnn1d-c examples/gesture_cnn/modeldata/cnn1d_packed.bin examples/gesture_cnn/modeldata/cnn1d_valset.bin</div>
     </div>
   </div>
 </div></section>

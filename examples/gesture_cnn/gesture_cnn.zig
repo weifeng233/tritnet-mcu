@@ -805,8 +805,8 @@ pub fn main(init: std.process.Init) u8 {
     _ = clib.printf("  ternary weights      : %6.2f us/inference  (%.1fM MACs/s)\n", lat_tern, @as(f64, @floatFromInt(MACS_PER_INFERENCE)) / lat_tern);
 
     _ = clib.printf("\n== phase 4: packed export + round-trip ==\n");
-    const model_path = "modeldata/cnn1d_packed.bin";
-    const valset_path = "modeldata/cnn1d_valset.bin";
+    const model_path = "examples/gesture_cnn/modeldata/cnn1d_packed.bin";
+    const valset_path = "examples/gesture_cnn/modeldata/cnn1d_valset.bin";
     const model_size = export_model(init.io, model_path, qat_val.acc) catch {
         std.debug.print("failed to write {s}\n", .{model_path});
         return 1;

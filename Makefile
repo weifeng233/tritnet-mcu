@@ -43,10 +43,10 @@ DATA    := examples/gpt_names/data/names.txt
 
 # TinyML 1D-CNN deployment engine: consumes the artifacts written by
 # `zig build --release=fast example-cnn` and verifies accuracy/latency parity.
-CNN_BIN  := cnn1d-c
-CNN_SRC  := c/cnn1d_inference.c
-CNN_MODEL := modeldata/cnn1d_packed.bin
-CNN_VALSET := modeldata/cnn1d_valset.bin
+CNN_BIN  := examples/gesture_cnn/cnn1d-c
+CNN_SRC  := examples/gesture_cnn/c/cnn1d_inference.c
+CNN_MODEL := examples/gesture_cnn/modeldata/cnn1d_packed.bin
+CNN_VALSET := examples/gesture_cnn/modeldata/cnn1d_valset.bin
 
 # Neural Circuit Policies deployment engine: consumes the artifacts written
 # by `zig build --release=fast example-ncps` and verifies val-MSE parity.

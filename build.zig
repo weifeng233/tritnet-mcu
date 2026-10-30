@@ -88,7 +88,7 @@ pub fn build(b: *std.Build) void {
     gpt_step.dependOn(&gpt_cmd.step);
 
     const cnn_mod = b.createModule(.{
-        .root_source_file = b.path("examples/gesture_cnn.zig"),
+        .root_source_file = b.path("examples/gesture_cnn/gesture_cnn.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -188,7 +188,7 @@ pub fn build(b: *std.Build) void {
     const run_gpt_tests = b.addRunArtifact(gpt_tests);
 
     const cnn_test_mod = b.createModule(.{
-        .root_source_file = b.path("examples/gesture_cnn.zig"),
+        .root_source_file = b.path("examples/gesture_cnn/gesture_cnn.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
