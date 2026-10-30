@@ -32,7 +32,8 @@ def header_timestamp() -> str:
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
     if epoch is None:
         return str(datetime.now())
-    # UTC, not local: a pinned build should not depend on the machine's time zone.\n    return str(datetime.fromtimestamp(int(epoch), tz=timezone.utc).replace(tzinfo=None))
+    # UTC, not local: a pinned build should not depend on the machine's time zone.
+    return str(datetime.fromtimestamp(int(epoch), tz=timezone.utc).replace(tzinfo=None))
 
 
 # ============================================================================
@@ -180,7 +181,8 @@ def generate_c_header(checkpoint_path, output_path):
         f.write(f" * Vocab size: {vocab_size}\n")
         f.write(f" * Ternary weights: {{-1, 0, +1}} (base-3 packed)\n")
         f.write(f" *\n")
-        f.write(f" * From: {checkpoint_path}\n")
+        # forward slashes, so a header built on Windows matches one built on Linux
+        f.write(f" * From: {checkpoint_path.replace(os.sep, '/')}\n")
         f.write(f" */\n\n")
 
         f.write("#ifndef BITNET_GPT_MODEL_H\n")
