@@ -82,7 +82,47 @@ ncps-check: $(NCPS_BIN)
 .PHONY: deploy-check
 deploy-check: cnn-c ncps-check
 
+# Timestral-5M: the sketch-a-series app. `fetch-timestral` pulls the released
+# checkpoint (21 MB) and refreshes the reference fixtures; `timestral` quantizes
+# and scores it; `sketch` serves the drawing app on http://127.0.0.1:8000.
+TIMESTRAL_CLI := zig-out/bin/timestral-cli
+TIMESTRAL_SAFE := modeldata/timestral-5m/model.safetensors
+TIMESTRAL_QAT := modeldata/timestral_qat/model.safetensors
+TIMESTRAL_PACKED := modeldata/timestral_packed.bin
+TIMESTRAL_PTQ := modeldata/timestral_ptq.bin
+
+fetch-timestral:
+	python -c "from huggingface_hub import snapshot_download; snapshot_download('mistralai/Timestral-5M', local_dir='modeldata/timestral-5m', allow_patterns=['*.json','*.safetensors','LICENSE'])"
+	python python/timestral_fixtures.py
+
+$(TIMESTRAL_CLI): $(wildcard src/timestral/*.zig src/timestral.zig examples/timestral_sketch.zig)
+	zig build --release=fast
+
+# The deployed artifact: the QAT latents, ternarized, packed, width-calibrated.
+quantize-timestral: $(TIMESTRAL_CLI) $(TIMESTRAL_QAT)
+	$(TIMESTRAL_CLI) quantize $(TIMESTRAL_QAT) $(TIMESTRAL_PACKED)
+
+# The baseline the report compares against: the released checkpoint, plain PTQ.
+quantize-timestral-ptq: $(TIMESTRAL_CLI)
+	$(TIMESTRAL_CLI) quantize $(TIMESTRAL_SAFE) $(TIMESTRAL_PTQ) --no-calibrate
+
+timestral-eval: $(TIMESTRAL_CLI)
+	$(TIMESTRAL_CLI) eval $(TIMESTRAL_SAFE) --dump modeldata/timestral_strokes.bin --json modeldata/timestral_eval_fp32.json
+	$(TIMESTRAL_CLI) eval $(TIMESTRAL_PTQ) --json modeldata/timestral_eval_ptq.json
+	$(TIMESTRAL_CLI) eval $(TIMESTRAL_PACKED) --json modeldata/timestral_eval_ternary.json
+	$(TIMESTRAL_CLI) forecast $(TIMESTRAL_SAFE) modeldata/timestral_strokes.bin --out modeldata/timestral_forecast_fp32.bin
+	$(TIMESTRAL_CLI) forecast $(TIMESTRAL_PACKED) modeldata/timestral_strokes.bin --out modeldata/timestral_forecast_ternary.bin
+
+timestral-check: timestral-eval
+	python python/timestral_parity.py
+
+timestral-qat:
+	python python/timestral_qat.py --steps 2500 --batch 32 --lr 1.5e-4
+
+sketch: $(TIMESTRAL_CLI)
+	python deploy/app.py --port 8000
+
 clean:
 	rm -rf $(BIN) $(CNN_BIN) $(NCPS_BIN) zig-out .zig-cache *.o *.dSYM
 
-.PHONY: all run cnn-c ncps-check deploy-check clean
+.PHONY: all run cnn-c ncps-check deploy-check clean fetch-timestral quantize-timestral quantize-timestral-ptq timestral-eval timestral-check timestral-qat sketch

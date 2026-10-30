@@ -112,6 +112,56 @@ pub fn build(b: *std.Build) void {
     const ncps_step = b.step("example-ncps", "Example: CfC/LTC Neural Circuit Policies (train -> quantize -> pack)");
     ncps_step.dependOn(&ncps_cmd.step);
 
+    // Example 4: deploy Mistral's Timestral-5M time-series model behind the
+    // sketch-a-series app, then quantize it with this framework and re-run the
+    // same app against the ternary artifact.
+    const ts_lib = b.createModule(.{
+        .root_source_file = b.path("src/timestral.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    ts_lib.addImport("framework", fw_mod);
+    if (target.result.os.tag != .windows) ts_lib.linkSystemLibrary("m", .{});
+    const ts_mod = b.createModule(.{
+        .root_source_file = b.path("examples/timestral_sketch.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    ts_mod.addImport("timestral", ts_lib);
+    ts_mod.addImport("framework", fw_mod);
+    const ts_exe = b.addExecutable(.{
+        .name = "timestral-cli",
+        .root_module = ts_mod,
+    });
+    if (target.result.os.tag != .windows) ts_mod.linkSystemLibrary("m", .{});
+    b.installArtifact(ts_exe);
+
+    const ts_quant_cmd = b.addRunArtifact(ts_exe);
+    ts_quant_cmd.addArgs(&.{ "quantize", "modeldata/timestral-5m/model.safetensors", "modeldata/timestral_packed.bin" });
+    const ts_quant_step = b.step("timestral-quantize", "Quantize Timestral-5M to the framework's ternary artifact");
+    ts_quant_step.dependOn(&ts_quant_cmd.step);
+
+    const ts_eval_cmd = b.addRunArtifact(ts_exe);
+    ts_eval_cmd.addArgs(&.{ "eval", "modeldata/timestral_packed.bin", "--json", "modeldata/timestral_eval_ternary.json" });
+    const ts_eval_step = b.step("timestral-eval", "Score the ternary Timestral artifact (pinball, MASE, latency)");
+    ts_eval_step.dependOn(&ts_eval_cmd.step);
+
+    const ts_fp32_cmd = b.addRunArtifact(ts_exe);
+    ts_fp32_cmd.addArgs(&.{ "eval", "modeldata/timestral-5m/model.safetensors", "--json", "modeldata/timestral_eval_fp32.json" });
+    const ts_fp32_step = b.step("timestral-eval-fp32", "Score the fp32 Timestral checkpoint with the same engine");
+    ts_fp32_step.dependOn(&ts_fp32_cmd.step);
+
+    const ts_serve_cmd = b.addRunArtifact(ts_exe);
+    ts_serve_cmd.addArgs(&.{ "serve", "modeldata/timestral_packed.bin" });
+    const ts_serve_step = b.step("timestral-serve", "Run the ternary forecast worker (JSON lines on stdin/stdout)");
+    ts_serve_step.dependOn(&ts_serve_cmd.step);
+
+    const ts_all_step = b.step("example-timestral", "Example: Timestral-5M sketch-a-series (quantize -> eval -> serve)");
+    ts_all_step.dependOn(&ts_quant_cmd.step);
+    ts_all_step.dependOn(&ts_eval_cmd.step);
+
     // unit tests: the framework's own modules plus each example's suite
     const fw_tests = b.addTest(.{ .root_module = fw_mod });
     const run_fw_tests = b.addRunArtifact(fw_tests);
@@ -146,9 +196,25 @@ pub fn build(b: *std.Build) void {
     const ncps_tests = b.addTest(.{ .root_module = ncps_test_mod });
     const run_ncps_tests = b.addRunArtifact(ncps_tests);
 
+    const ts_test_mod = b.createModule(.{
+        .root_source_file = b.path("examples/timestral_sketch.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    ts_test_mod.addImport("timestral", ts_lib);
+    ts_test_mod.addImport("framework", fw_mod);
+    const ts_tests = b.addTest(.{ .root_module = ts_test_mod });
+    const run_ts_tests = b.addRunArtifact(ts_tests);
+
+    const ts_lib_tests = b.addTest(.{ .root_module = ts_lib });
+    const run_ts_lib_tests = b.addRunArtifact(ts_lib_tests);
+
     const test_step = b.step("test", "Run framework + example unit tests");
     test_step.dependOn(&run_fw_tests.step);
     test_step.dependOn(&run_gpt_tests.step);
     test_step.dependOn(&run_cnn_tests.step);
     test_step.dependOn(&run_ncps_tests.step);
+    test_step.dependOn(&run_ts_tests.step);
+    test_step.dependOn(&run_ts_lib_tests.step);
 }
