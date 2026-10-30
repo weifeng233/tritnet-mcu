@@ -1,0 +1,3 @@
+{"model":"modeldata/timestral_packed.bin","params":5205504,"ternary_params":5203968,"bytes":1152070,"bits_per_weight":1.7705,
+"strokes":24,"ctx":256,"h":96,"pinball":0.107099,"mae":0.292878,"mase":8.908930,"cov90":0.9006,
+"beats_naive":0.7500,"ms_total":414.33,"ms_per_stroke":17.264}

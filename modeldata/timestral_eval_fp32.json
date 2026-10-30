@@ -1,0 +1,3 @@
+{"model":"modeldata/timestral-5m/model.safetensors","params":5205504,"ternary_params":0,"bytes":20843960,"bits_per_weight":32.0337,
+"strokes":24,"ctx":256,"h":96,"pinball":0.071072,"mae":0.216849,"mase":5.893173,"cov90":0.9609,
+"beats_naive":0.7917,"ms_total":389.78,"ms_per_stroke":16.241}
