@@ -15,3 +15,16 @@ zig-out/
 *.exe
 __pycache__/
 .commandcode/
+# Timestral-5M: downloaded checkpoints and QAT outputs (use make fetch-timestral / timestral-qat)
+modeldata/timestral-5m/
+modeldata/timestral_qat*/
+# generated Timestral artifacts: rebuild with `make quantize-timestral` (or
+# `make quantize-timestral-ptq`). They are published as release assets instead
+# of living in git history: https://github.com/weifeng233/tritnet-mcu/releases
+modeldata/timestral_packed.bin
+modeldata/timestral_ptq.bin
+modeldata/timestral_forecast_*.bin
+deploy/server.log
+deploy/server.err
+# personal notes: project review, standardization plan, resume material
+docs/research/

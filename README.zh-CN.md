@@ -54,8 +54,11 @@ zig build test                          # 框架 + 样例单元测试
 zig build --release=fast example-gpt    # 样例 1：micro-GPT 人名
 zig build --release=fast example-cnn    # 样例 2：TinyML 手势 1D-CNN
 zig build --release=fast example-ncps   # 样例 3：CfC/LTC 神经回路策略
+zig build --release=fast example-timestral  # 样例 4：Timestral-5M 量化
 zig build --release=fast run            # 仅 fp32 基线（microGPT）
 make deploy-check                       # 对全部打包产物做 C 部署校验
+make timestral-check                    # 样例 4 与 PyTorch 的端到端数值校验
+make sketch                             # 样例 4 的绘图预测网页（http://127.0.0.1:8000）
 ```
 
 ## 样例 1 — `gpt_names`：字符级 micro-GPT
@@ -185,6 +188,47 @@ zig build --release=fast example-ncps   # 写出 modeldata/ncps_{cfc,fc,ncp,ltc}
 make ncps-check                         # 对全部四个产物做 C 部署校验
 ```
 
+## 样例 4 — `timestral_sketch`：部署 Mistral Timestral-5M，再用本框架量化
+
+这个样例部署的不是本仓库训练的模型，而是 Mistral AI 的时间序列基础模型
+[Timestral-5M](https://huggingface.co/mistralai/Timestral-5M)（520 万参数、8 层
+patch Transformer、每步 21 个分位数），并复刻
+[sketch-a-series](https://huggingface.co/spaces/townbox/sketch-a-series) 的交互：
+用鼠标画一条曲线，模型把它延续成一条分位数扇形带。随后用本仓库的技术栈
+（absmean 三元量化、每字节 5 个 trit、打包产物、Zig 推理引擎）量化同一个模型，
+并让**同一个网页**同时请求 fp32 与三元两个后端，把 1.77 bit/权重的代价画在同一张图上。
+
+Zig 引擎是完整的前向移植（逐 patch 因果归一化、`[Enc ; Dec]` 注意力 + RoPE +
+sigmoid 门、SwiGLU、单调分位数头、advancing refine 帧、clampsym），在 fp32 权重上
+与 PyTorch 的相对误差为 2.4·10⁻⁶——所以两者的差异只来自量化。
+
+```
+fp32（safetensors，PyTorch）       20,843,960 B
+三元产物（Zig，1.77 bit/权重）     1,152,070 B   （小 18.1 倍）
+
+24 条留出笔画，256 步上下文，96 步预测
+  变体          pinball   MAE     MASE    cov90   单次请求
+  fp32          0.0711   0.217   5.89    0.961    31-44 ms
+  PTQ 三元      0.2023   0.522  17.55    0.777       -
+  QAT 三元      0.1071   0.293   8.91    0.901    16-22 ms
+```
+
+朴素训练后量化会让误差涨到三倍；2500 步量化感知微调（4 线程 CPU 约 9.5 分钟，
+`python/timestral_qat.py`）把其中 73% 的差距补回来。趋势类和随机游走类笔画与 fp32
+相差不超过 10%，而需要保住振幅的笔画（手绘曲线、正弦）明显被压平（误差 2.2–2.8 倍）——
+网页把两条中位数曲线叠在一起画，这个代价是可见的，而不是被藏起来。
+
+```bash
+make fetch-timestral                    # 下载官方权重（21 MB）
+make timestral-qat quantize-timestral   # 微调 → 量化 + 分位数宽度标定
+make timestral-check                    # 与 PyTorch 在同样笔画上的数值校验
+make sketch                             # 打开 http://127.0.0.1:8000
+```
+
+网页（`web/sketch-a-series.html`）、服务端（`deploy/app.py`）以及完整记录
+（打包格式、哪些地方会坏、为什么去掉梯度掩码、分位数宽度标定）见
+[docs/TIMESTRAL.md](docs/TIMESTRAL.md) 与 [deploy/README.md](deploy/README.md)。
+
 ## C 部署引擎
 
 `c/` 是相互独立的 C 部署引擎 —— 引擎加载打包模型和导出的验证集，
@@ -228,13 +272,17 @@ mlp-mcu 项目。
 src/framework.zig    框架入口：聚合六个核心模块
   src/framework/       rng / ternary / quant / adam / packed_model / timing
 src/fp32.zig         fp32 参考基线（最初的 microGPT）
+src/timestral.zig    样例 4：Timestral-5M 部署模块
+  src/timestral/       model / engine / weights / artifact / eval / fixture
 examples/            样例，每个样例一个二进制
   gpt_names.zig        字符级 micro-GPT（names.txt 人名）
   gesture_cnn.zig      TinyML 1D-CNN 手势分类器
   liquid_sine.zig      CfC/LTC 神经回路策略（倍频正弦）
+  timestral_sketch.zig Timestral-5M：量化 / 评估 / 预测 / 服务
 c/                   C 部署引擎（cnn1d、ncps）+ fp32 C 对照
-python/              旧版 PyTorch QAT 路径（train_qat.py + export.py）
-reference/           内嵌参考项目：BitNetMCU/、mlp-mcu/
-web/                 两份基准测试的单页可视化
+deploy/              sketch-a-series 服务端（FastAPI）及其说明
+python/              旧版 PyTorch QAT 路径，以及 Timestral 工具（QAT、数值校验、作图）
+reference/           内嵌参考项目：BitNetMCU/、mlp-mcu/、timestral/
+web/                 基准测试的单页可视化，以及 sketch-a-series 网页
 data/ modeldata/ docs/
 ```

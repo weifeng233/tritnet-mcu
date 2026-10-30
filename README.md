@@ -57,8 +57,11 @@ zig build test                          # framework + example unit tests
 zig build --release=fast example-gpt    # example 1: micro-GPT on names
 zig build --release=fast example-cnn    # example 2: TinyML gesture 1D-CNN
 zig build --release=fast example-ncps   # example 3: CfC/LTC Neural Circuit Policies
+zig build --release=fast example-timestral  # example 4: quantize Timestral-5M
 zig build --release=fast run            # fp32 baseline only (microGPT)
 make deploy-check                       # C deployment check on every packed artifact
+make timestral-check                    # example 4: end-to-end parity against PyTorch
+make sketch                             # example 4: the drawing app (http://127.0.0.1:8000)
 ```
 
 ## Example 1 — `gpt_names`: char-level micro-GPT
@@ -201,6 +204,52 @@ zig build --release=fast example-ncps   # writes modeldata/ncps_{cfc,fc,ncp,ltc}
 make ncps-check                         # C deployment check on all four artifacts
 ```
 
+## Example 4 — `timestral_sketch`: deploying Mistral's Timestral-5M, then ternarizing it
+
+Not every model this repository deploys was trained here. This example stands up
+[Mistral AI's Timestral-5M](https://huggingface.co/mistralai/Timestral-5M) — 5.2 M
+parameters, 8 patch-transformer blocks, 21 quantiles per step — behind a *sketch-a-series*
+app: draw a stroke and the model continues it as a quantile fan, the interaction of
+[the Space](https://huggingface.co/spaces/townbox/sketch-a-series). Then it quantizes that
+model with this framework's own stack — absmean QAT, 5 trits per byte, a packed artifact,
+a Zig engine — and runs the **same page** against both backends so the price of 1.77 bits
+per weight is visible side by side.
+
+The Zig engine is a full port of the forward pass (per-patch causal normalization, `[Enc ;
+Dec]` attention with RoPE and sigmoid gates, SwiGLU, the monotone quantile head, the
+advancing refine frame, clampsym) and reproduces PyTorch to 2.4·10⁻⁶ relative error on the
+fp32 weights, which is what makes the comparison mean quantization and nothing else.
+
+```
+fp32 (safetensors, PyTorch)      20,843,960 B
+ternary artifact (Zig, 1.77 bit)  1,152,070 B   (18.1x smaller)
+
+24 held-out strokes, 256-step context, 96-step horizon
+  variant      pinball   MAE     MASE    cov90   one request
+  fp32          0.0711   0.217   5.89    0.961     31-44 ms
+  PTQ ternary   0.2023   0.522  17.55    0.777        -
+  QAT ternary   0.1071   0.293   8.91    0.901     16-22 ms
+```
+
+Naive ternarization triples the error; 2,500 steps of quantization-aware fine-tuning
+(9.5 min on four CPU threads, `python/timestral_qat.py`) recover 73 % of that gap. What
+survives best is what a sketch mostly is: trends and noisy walks come out within 10 % of
+fp32, while strokes whose continuation needs an amplitude — drawn curves and sinusoids —
+come out visibly damped (2.2–2.8× the pinball). The app draws both medians on the same
+chart so that cost is visible rather than hidden.
+
+```bash
+make fetch-timestral                 # the released checkpoint (21 MB)
+make timestral-qat quantize-timestral   # fine-tune, then quantize + calibrate
+make timestral-check                 # parity against PyTorch on the same strokes
+make sketch                          # http://127.0.0.1:8000, both backends
+```
+
+The page (`web/sketch-a-series.html`), the server (`deploy/app.py`) and the whole story —
+artifact format, what breaks, why the gradient mask had to go, the quantile-width
+calibration — are in [docs/TIMESTRAL.md](docs/TIMESTRAL.md) and
+[deploy/README.md](deploy/README.md).
+
 ## The deploy leg: C engines
 
 `c/` holds independent C deployment engines — they load the packed
@@ -248,13 +297,17 @@ mlp-mcu projects that inspired the scheme.
 src/framework.zig    framework entry: re-exports the six core modules
   src/framework/       rng / ternary / quant / adam / packed_model / timing
 src/fp32.zig         fp32 reference baseline (the original microGPT)
+src/timestral.zig    example 4: Timestral-5M deployment module
+  src/timestral/       model / engine / weights / artifact / eval / fixture
 examples/            worked examples, one binary each
   gpt_names.zig        char-level micro-GPT on names.txt
   gesture_cnn.zig      TinyML 1D-CNN gesture classifier
   liquid_sine.zig      CfC/LTC Neural Circuit Policies, sine doubling
+  timestral_sketch.zig Timestral-5M: quantize / eval / forecast / serve
 c/                   C deployment engines (cnn1d, ncps) + fp32 C reference
-python/              legacy PyTorch QAT path (train_qat.py + export.py)
-reference/           vendored references: BitNetMCU/, mlp-mcu/
-web/                 single-page visualizations of two benchmark runs
+deploy/              the sketch-a-series server (FastAPI) + its README
+python/              legacy PyTorch QAT path, plus the Timestral tools (QAT, parity, figures)
+reference/           vendored references: BitNetMCU/, mlp-mcu/, timestral/
+web/                 single-page visualizations and the sketch-a-series app
 data/ modeldata/ docs/
 ```
