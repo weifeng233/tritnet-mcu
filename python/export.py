@@ -25,7 +25,7 @@ from datetime import datetime
 # Import training config
 # ============================================================================
 sys.path.insert(0, os.path.dirname(__file__))
-from bitnet_gpt_train import N_EMBD, N_HEAD, N_LAYER, BLOCK_SIZE, HEAD_DIM, MLP_DIM, BitNetGPT
+from train_qat import N_EMBD, N_HEAD, N_LAYER, BLOCK_SIZE, HEAD_DIM, MLP_DIM, BitNetGPT
 
 
 # ============================================================================
