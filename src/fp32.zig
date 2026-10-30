@@ -1062,26 +1062,26 @@ fn gpt_forward_infer(token_id: usize, pos_id: usize, logits_out: []f32) void {
             inline for (0..4) |k| {
                 const hv = h2_0[k];
                 const bc: Vec8 = @splat(hv);
-                t0 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + k) * N_EMBD])).* , bc, t0);
-                t1 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + k) * N_EMBD + 8])).* , bc, t1);
+                t0 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + k) * N_EMBD])).*, bc, t0);
+                t1 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + k) * N_EMBD + 8])).*, bc, t1);
             }
             inline for (0..4) |k| {
                 const hv = h2_1[k];
                 const bc: Vec8 = @splat(hv);
-                n0 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 4 + k) * N_EMBD])).* , bc, n0);
-                n1 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 4 + k) * N_EMBD + 8])).* , bc, n1);
+                n0 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 4 + k) * N_EMBD])).*, bc, n0);
+                n1 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 4 + k) * N_EMBD + 8])).*, bc, n1);
             }
             inline for (0..4) |k| {
                 const hv = h2_2[k];
                 const bc: Vec8 = @splat(hv);
-                y0 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 8 + k) * N_EMBD])).* , bc, y0);
-                y1 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 8 + k) * N_EMBD + 8])).* , bc, y1);
+                y0 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 8 + k) * N_EMBD])).*, bc, y0);
+                y1 = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 8 + k) * N_EMBD + 8])).*, bc, y1);
             }
             inline for (0..4) |k| {
                 const hv = h2_3[k];
                 const bc: Vec8 = @splat(hv);
-                w0v = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 12 + k) * N_EMBD])).* , bc, w0v);
-                w1v = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 12 + k) * N_EMBD + 8])).* , bc, w1v);
+                w0v = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 12 + k) * N_EMBD])).*, bc, w0v);
+                w1v = @mulAdd(Vec8, @as(*const [8]f32, @ptrCast(&iw_fc2[li][(c_idx2 + 12 + k) * N_EMBD + 8])).*, bc, w1v);
             }
         }
         const sv: Vec8 = @splat(s_mlp * s_mlp);

@@ -1582,38 +1582,38 @@ fn export_model(io: std.Io, alloc: std.mem.Allocator, m: *Model, path: []const u
     const buf = try alloc.alloc(u8, 1 << 20);
     defer alloc.free(buf);
     var cur: usize = 0;
-    fw.packed_model.putBytes(buf[0..], &cur,MAGIC);
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(m.in_size));
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(m.units_total));
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(m.out_dim));
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(m.layers.len));
-    fw.packed_model.putU32(buf[0..], &cur,@intFromEnum(m.mode));
-    fw.packed_model.putU32(buf[0..], &cur,if (m.bb != null) @intCast(m.bb.?.n_out) else 0);
-    fw.packed_model.putU32(buf[0..], &cur,if (m.proj != null) @intCast(m.proj.?.n_out) else 0);
-    fw.packed_model.putU32(buf[0..], &cur,if (m.ltc != null) 1 else 0); // cell kind
+    fw.packed_model.putBytes(buf[0..], &cur, MAGIC);
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(m.in_size));
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(m.units_total));
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(m.out_dim));
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(m.layers.len));
+    fw.packed_model.putU32(buf[0..], &cur, @intFromEnum(m.mode));
+    fw.packed_model.putU32(buf[0..], &cur, if (m.bb != null) @intCast(m.bb.?.n_out) else 0);
+    fw.packed_model.putU32(buf[0..], &cur, if (m.proj != null) @intCast(m.proj.?.n_out) else 0);
+    fw.packed_model.putU32(buf[0..], &cur, if (m.ltc != null) 1 else 0); // cell kind
     if (m.ltc) |ltc| {
         // liquid cell: ternary synapse strengths + fp32 physical parameters
         put_ternary_matrix(buf[0..], &cur, &ltc.w);
         put_ternary_matrix(buf[0..], &cur, &ltc.sensory_w);
         const fps = [13]*Param{ &ltc.sigma, &ltc.mu, &ltc.erev, &ltc.sensory_sigma, &ltc.sensory_mu, &ltc.sensory_erev, &ltc.gleak, &ltc.vleak, &ltc.cm, &ltc.input_w, &ltc.input_b, &ltc.output_w, &ltc.output_b };
-        for (fps) |p| fw.packed_model.putBytes(buf[0..], &cur,std.mem.sliceAsBytes(p.w));
+        for (fps) |p| fw.packed_model.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(p.w));
     }
     if (m.bb) |*bb| put_lin(buf[0..], &cur, bb);
     for (m.layers) |*l| {
-        fw.packed_model.putU32(buf[0..], &cur,@intCast(l.n_sens));
-        fw.packed_model.putU32(buf[0..], &cur,@intCast(l.n_out));
+        fw.packed_model.putU32(buf[0..], &cur, @intCast(l.n_sens));
+        fw.packed_model.putU32(buf[0..], &cur, @intCast(l.n_out));
         put_lin(buf[0..], &cur, &l.ff1);
         if (l.mode != .pure) {
             put_lin(buf[0..], &cur, &l.ff2.?);
             put_lin(buf[0..], &cur, &l.t_a.?);
             put_lin(buf[0..], &cur, &l.t_b.?);
         } else {
-            fw.packed_model.putBytes(buf[0..], &cur,std.mem.sliceAsBytes(l.tau.?.w));
-            fw.packed_model.putBytes(buf[0..], &cur,std.mem.sliceAsBytes(l.a_par.?.w));
+            fw.packed_model.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(l.tau.?.w));
+            fw.packed_model.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(l.a_par.?.w));
         }
     }
     if (m.proj) |*pj| put_lin(buf[0..], &cur, pj);
-    fw.packed_model.putF64(buf[0..], &cur,expected_mse);
+    fw.packed_model.putF64(buf[0..], &cur, expected_mse);
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = buf[0..cur] });
     return cur;
 }
@@ -1623,16 +1623,16 @@ fn export_valset(io: std.Io, alloc: std.mem.Allocator, path: []const u8) !usize 
     const buf = try alloc.alloc(u8, n);
     defer alloc.free(buf);
     var cur: usize = 0;
-    fw.packed_model.putBytes(buf[0..], &cur,VALSET_MAGIC);
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(N_VAL));
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(T_SEQ));
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(IN_DIM));
-    fw.packed_model.putU32(buf[0..], &cur,@intCast(OUT_DIM));
+    fw.packed_model.putBytes(buf[0..], &cur, VALSET_MAGIC);
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(N_VAL));
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(T_SEQ));
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(IN_DIM));
+    fw.packed_model.putU32(buf[0..], &cur, @intCast(OUT_DIM));
     for (N_TRAIN..N_SEQ) |i| {
-        fw.packed_model.putBytes(buf[0..], &cur,std.mem.sliceAsBytes(seq_x[i][0..]));
+        fw.packed_model.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(seq_x[i][0..]));
     }
     for (N_TRAIN..N_SEQ) |i| {
-        fw.packed_model.putBytes(buf[0..], &cur,std.mem.sliceAsBytes(seq_y[i][0..]));
+        fw.packed_model.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(seq_y[i][0..]));
     }
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = buf[0..cur] });
     return cur;
@@ -2320,6 +2320,3 @@ test "ternary QAT forward stays close to the fp32 forward (trained weights are n
     // fp32/ptq/qat comparison in the pipeline
     try testing.expect(max_shift < 1.0);
 }
-
-
-
