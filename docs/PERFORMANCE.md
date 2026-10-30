@@ -1,150 +1,135 @@
 # Performance notes
 
-- **Applies to:** `main` as of v0.2.0
-- **Last verified:** 2026-10-30
-- **Verification:** `zig build --release=fast run` and `zig build --release=fast example-gpt` on the machine named below
+Applies to `main` as of v0.3.0. Last verified 2026-10-30 with
+`zig build --release=fast run` and `zig build --release=fast example-gpt` on the
+machine named below.
 
-How the inference forward differs from the training one, and where the
-time per token goes.
+These notes cover how the inference forward differs from the training one, and
+where the time per token goes.
 
 ## Inference path
 
-Training and inference use separate forward passes. `gpt_forward` stores
-~1.3 KB of activations per token for backprop. `gpt_forward_infer` needs
-none of that and is built for one-token-at-a-time decoding. Its logits
-match the training forward to 2.4e-06 absolute on AVX2, against logits
-of magnitude ~8, which is fp32 rounding noise.
+Training and inference use separate forward passes. `gpt_forward` stores ~1.3 KB of
+activations per token for backprop. `gpt_forward_infer` needs none of that and is
+built for one-token-at-a-time decoding. Its logits match the training forward to
+2.4e-06 absolute on AVX2, against logits of magnitude ~8, which is fp32 rounding
+noise.
 
-There are two backends. Weight packing, the `(token, pos)` table and the
-sampler are shared; only the kernels and the forward body differ. NEON
-works 4 floats wide and AVX2 8, so AVX2 needs half the instructions per
-matvec: one column of a 16-row block costs a broadcast and two FMAs,
-against four lane-indexed FMAs on NEON.
+There are two backends. Weight packing, the `(token, pos)` table and the sampler
+are shared; only the kernels and the forward body differ. NEON works 4 floats wide
+and AVX2 8, so AVX2 needs half the instructions per matvec: one column of a 16-row
+block costs a broadcast and two FMAs, against four lane-indexed FMAs on NEON.
 
 What the inference path does differently:
 
-- Column-major weights, so matvecs accumulate straight into output
-  registers with no horizontal reduction anywhere.
-  `infer_pack_weights()` builds the transposed copies once, after the
-  last optimiser step.
-- Split accumulators. One accumulator set turns a matvec into a serial
-  chain of `nin` FMAs, so `mv16_blk16r` uses two sets and
-  `mv16_blk16r4`, which fc1 calls, uses four.
-- Hoisted prefix. The embedding, both RMS norms and layer 0 Q/K/V depend
-  only on `(token, pos)`, and there are only `vocab * BLOCK_SIZE`
-  distinct inputs, so `build_pretok()` puts them in a table.
-- Deferred RMS scale. The MLP norm scale is a positive scalar and
-  fc1/ReLU^2/fc2 are positively homogeneous, so `rmsnorm_scale()`
-  returns it and it factors out to one `s^2` at the end, off fc1's
-  critical path. An activation that is not positively homogeneous would
-  break this.
-- Fused sampling. `sample_logits()` does softmax, temperature and
-  weighted choice in a single pass over unnormalised weights.
-- Vocab padded to 4 rather than 16. `mv16_blk16`, `mv16_blk8` and
-  `mv16_blk4` emit 16/8/4-row tiles, so a 27-token vocab costs 28 rows
-  instead of 32.
+- Column-major weights, so matvecs accumulate straight into output registers with
+  no horizontal reduction anywhere. `infer_pack_weights()` builds the transposed
+  copies once, after the last optimiser step.
+- Split accumulators. One accumulator set turns a matvec into a serial chain of
+  `nin` FMAs, so `mv16_blk16r` uses two sets and `mv16_blk16r4`, which fc1 calls,
+  uses four.
+- Hoisted prefix. The embedding, both RMS norms and layer 0 Q/K/V depend only on
+  `(token, pos)`, and there are only `vocab * BLOCK_SIZE` distinct inputs, so
+  `build_pretok()` puts them in a table.
+- Deferred RMS scale. The MLP norm scale is a positive scalar and fc1/ReLU^2/fc2
+  are positively homogeneous, so `rmsnorm_scale()` returns it and it factors out to
+  one `s^2` at the end, off fc1's critical path. An activation that is not
+  positively homogeneous would break this.
+- Fused sampling. `sample_logits()` does softmax, temperature and weighted choice in
+  a single pass over unnormalised weights.
+- Vocab padded to 4 rather than 16. `mv16_blk16`, `mv16_blk8` and `mv16_blk4` emit
+  16/8/4-row tiles, so a 27-token vocab costs 28 rows instead of 32.
 
 ## Where the time goes
 
 About half the time is the MLP.
 
-The limit is issue width rather than stalls. Extra independent FMAs
-added to the token loop cost 0.20 cycles each against a 0.19 theoretical
-minimum, so there is no idle slot left to fill: the machine is busy, not
-waiting. Speedups therefore have to come from issuing fewer instructions
-rather than from scheduling them better.
+The limit is issue width rather than stalls. Extra independent FMAs added to the
+token loop cost 0.20 cycles each against a 0.19 theoretical minimum, so there is no
+idle slot left to fill and the machine is busy. Speedups therefore have to come from
+issuing fewer instructions rather than from scheduling them better.
 
-Single-threaded, on the benchmark's 5M token sampling loop. Both binaries are the ones
-`zig build --release=fast` produces, measured in the same session on 2026-10-30:
+Single-threaded, on the benchmark's 5M token sampling loop. Both binaries are the
+ones `zig build --release=fast` produces, measured in the same session on
+2026-10-30:
 
 | machine | backend | tok/sec | conditions |
 | --- | --- | --- | --- |
 | AMD Ryzen 9 7940H | Zig fp32, AVX2 | 8,441,952 | median of 5 runs, 高性能 power plan |
 | AMD Ryzen 9 7940H | C fp32, AVX2 | 8,217,680 | same session, same machine flags |
 
-**The power plan matters more than anything in this file.** The same two binaries
-measure roughly 4.0 M tok/sec on this laptop's 平衡 (balanced) plan and 8.4 M on 高性能:
-a factor of two, larger than every optimization below combined. An earlier revision of
-this page quoted 5,491,565 tok/sec without saying which plan produced it; that number
-was not reproducible on 2026-10-30 and has been replaced rather than explained away.
+The power plan matters more than any optimization here. The same two binaries
+measure roughly 4.0 M tok/sec on this laptop's 平衡 (balanced) plan and 8.4 M on
+高性能: a factor of two, larger than every optimization below combined. Numbers
+without the plan are not comparable.
 
 ## Compiler
 
-The Zig build (`zig build --release=fast`) is `ReleaseFast` (`-Ofast` semantics). On the
-AMD Ryzen 9 7940H, the three ways to compile the C baseline — `zig build`, `make` (which
-uses `zig cc`), and `make CC=gcc` — land within a few percent of each other: in one
-2026-10-30 session the medians of five runs were 8.22 M (`zig build`), 7.92 M
+The Zig build (`zig build --release=fast`) is `ReleaseFast` (`-Ofast` semantics). On
+the AMD Ryzen 9 7940H, the three ways to compile the C baseline (`zig build`, `make`
+which uses `zig cc`, and `make CC=gcc`) land within a few percent of each other: in
+one 2026-10-30 session the medians of five runs were 8.22 M (`zig build`), 7.92 M
 (`make`, `zig cc`) and 8.09 M (`make CC=gcc`). The spread between those three was
-smaller than the spread between runs of a single binary on a thermally limited laptop,
-so no compiler is "11% faster" in a way that survives a fresh session.
+smaller than the spread between runs of a single binary on a thermally limited
+laptop, so no compiler is "11% faster" in a way that survives a fresh session.
 
-What does survive: the Zig and C baselines agree within ~3% under identical flags, which
-is the property worth checking — the port is not quietly slower than the C it came from.
-Compare numbers from one session, and record the power plan.
+One property survives: the Zig and C baselines agree within ~3% under identical
+flags, which is the property worth checking. The port is not quietly slower than the
+C it came from. Compare numbers from one session, and record the power plan.
 
-
-The AVX2 path is the less tuned of the two. Every constant in the NEON
-path was chosen by A/B measurement on ARM hardware and almost none of
-that has been repeated on x86. Note that an accumulator set holds 16
-floats, so it is 4 registers and 4 independent chains on NEON but only 2
-of each on AVX2: the same source gives x86 half the chains. x86-64 also
-has 16 vector registers against ARM64's 32, which makes the
+The AVX2 path is the less tuned of the two. Every constant in the NEON path was
+chosen by A/B measurement on ARM hardware, and almost none of that has been repeated
+on x86. An accumulator set holds 16 floats, so it is 4 registers and 4 independent
+chains on NEON but only 2 of each on AVX2: the same source gives x86 half the chains.
+x86-64 also has 16 vector registers against ARM64's 32, which makes the
 register-hungry choices the likeliest place to find headroom.
 
 ## Dead ends
 
-Measured and abandoned, so they need not be tried again:
+Measured and abandoned, so they do not need to be tried again:
 
-- fp16 weights. FMLAL, meaning fp16 multiply with fp32 accumulate,
-  halves the weight bytes but not the op count and moved the MLP by one
-  cycle out of 241. Accumulating in fp16 as well does halve the op count
-  and gained 5%, at the cost of three orders of magnitude of logit
-  accuracy.
-- Newton-refined reciprocal and rsqrt, 2 to 4% slower than hardware
-  `fdiv` and `fsqrt`, because the refinement is five instructions where
-  the hardware is one.
-- More accumulator chains on AVX2. Raising Wo and lm_head from 4 chains
-  to 8 measured flat on this machine.
-- Breaking the token-to-token dependency, tested by replaying a recorded
-  token trajectory so consecutive tokens were independent. No faster, so
-  nothing is waiting on that dependency.
+- fp16 weights. FMLAL, meaning fp16 multiply with fp32 accumulate, halves the weight
+  bytes but not the op count and moved the MLP by one cycle out of 241. Accumulating
+  in fp16 as well does halve the op count and gained 5%, at the cost of three orders
+  of magnitude of logit accuracy.
+- Newton-refined reciprocal and rsqrt, 2 to 4% slower than hardware `fdiv` and
+  `fsqrt`, because the refinement is five instructions where the hardware is one.
+- More accumulator chains on AVX2. Raising Wo and lm_head from 4 chains to 8 measured
+  flat on this machine.
+- Breaking the token-to-token dependency, tested by replaying a recorded token
+  trajectory so consecutive tokens were independent. No faster, so nothing is waiting
+  on that dependency.
 
-Batching is the change that would lift the ceiling. Several independent
-sequences at once turns every matvec into a matmul and gives the weights
-the reuse they currently have none of.
+Batching would lift the ceiling. Several independent sequences at once turns every
+matvec into a matmul and gives the weights the reuse they currently have none of.
 
 ## Training path
 
-The training loop (`gpt_forward`/`gpt_backward`/Adam) was scalar for a
-long time; strict FP evaluation kept LLVM from auto-vectorizing the
-reductions and accumulation loops. It now uses the same `@Vector` style
-as the inference path, with 8-wide kernels on x86 and NEON:
+The training loop (`gpt_forward`/`gpt_backward`/Adam) was scalar for a long time;
+strict FP evaluation kept LLVM from auto-vectorizing the reductions and accumulation
+loops. It now uses the same `@Vector` style as the inference path, with 8-wide
+kernels on x86 and NEON:
 
-- `linear_bwd_x` walks rows sequentially and keeps one 8-wide
-  accumulator set per weight column, instead of striding down `nout`
-  rows per output channel. Per-column sums stay in row order, so values
-  match the scalar version.
+- `linear_bwd_x` walks rows sequentially and keeps one 8-wide accumulator set per
+  weight column, instead of striding down `nout` rows per output channel. Per-column
+  sums stay in row order, so values match the scalar version.
 - `linear_bwd_w` is an 8-wide FMA outer product per row.
-- `adam_update` is 8-wide and takes the bias corrections and the clip
-  factor as arguments. The gradient clip is folded into Adam's gradient
-  read (`g * scale`) instead of a second full pass that rescales and
-  rewrites every gradient array.
-- The gradient-norm reduction is one fused-multiply pass over each
-  gradient array.
-- Attention forward/backward accumulate the 4-wide head slices with
-  `Vec4` FMAs against the kv rows; residual adds, the ReLU² and the
-  embedding/scatter paths are 8-wide.
-- Per-step fixed costs: the kv-cache reset before forward was dead
-  (each position writes k/v before attention reads them), the dk/dv
-  accumulator reset only covers the `n` live positions, Adam's
-  `pow(b1, step)` bias correction is computed once per step, and
-  `char_to_id` is a 256-entry LUT.
+- `adam_update` is 8-wide and takes the bias corrections and the clip factor as
+  arguments. The gradient clip is folded into Adam's gradient read (`g * scale`)
+  instead of running a second full pass that rescales and rewrites every gradient
+  array.
+- The gradient-norm reduction is one fused-multiply pass over each gradient array.
+- Attention forward and backward accumulate the 4-wide head slices with `Vec4` FMAs
+  against the kv rows; residual adds, the ReLU² and the embedding/scatter paths are
+  8-wide.
+- Per-step fixed costs: the kv-cache reset before forward was dead (each position
+  writes k/v before attention reads them), the dk/dv accumulator reset only covers
+  the `n` live positions, Adam's `pow(b1, step)` bias correction is computed once per
+  step, and `char_to_id` is a 256-entry LUT.
 
-ReleaseFast on the 7940H, 20000 steps over `examples/gpt_names/data/names.txt` (median of
-5 runs): 0.30 s, roughly 67K steps/sec. Final average loss 2.2194 vs
-2.2199 scalar — the only
-numerical changes are reassociated sums (vector lane splits, FMA
-contraction in the new kernels), and samples remain name-like.
-Inference throughput is untouched, as none of its code paths changed.
-The training timer now prints `train: <s> (<steps/sec>)` after the
-last step.
+ReleaseFast on the 7940H, 20000 steps over `examples/gpt_names/data/names.txt`
+(median of 5 runs): 0.30 s, roughly 67K steps/sec. Final average loss 2.2194 against
+2.2199 for the scalar version. The only numerical changes are reassociated sums
+(vector lane splits, FMA contraction in the new kernels), and samples remain
+name-like. Inference throughput is untouched, as none of its code paths changed. The
+training timer now prints `train: <s> (<steps/sec>)` after the last step.

@@ -5,7 +5,7 @@
 2026-10-20), kept so that the Zig port can be diffed against the code it reproduces
 and so that the TRFX fixtures can be regenerated.
 
-License: **Apache-2.0**, reproduced in [`LICENSE`](LICENSE).
+License: Apache-2.0, reproduced in [`LICENSE`](LICENSE).
 
 Files are unmodified except that `README.md` and packaging metadata that the
 reference does not need were not copied. Changes, if any are ever made, must be

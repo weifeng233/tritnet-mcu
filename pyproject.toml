@@ -14,7 +14,7 @@
 
 [project]
 name = "tritnetmcu-tools"
-version = "0.2.0"
+version = "0.3.0"
 description = "Evaluation, quantization and serving tools for the TritNet-MCU ternary pipeline"
 requires-python = ">=3.11"
 license = "MIT"

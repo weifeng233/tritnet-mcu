@@ -60,11 +60,12 @@ ternary matmul is add/skip/subtract over the packed trits with one scale per out
  "eval": {"fp32": {...}, "ternary": {...}}}
 ```
 
-`POST /api/forecast` — `{"y": [floats], "h": 96, "backend": "both" | "fp32" | "ternary"}`
-→ `{"h": 96, "levels": [...], "results": {"fp32": {"q": [[21 floats] ... 96], "ms": 10.4},
-"ternary": {"q": [...], "ms": 13.2}}}`. `q[i][k]` is the quantile at `levels[k]` for
-horizon step `i`; level index 10 is the median. If one backend fails the other still
-answers (the response carries an `errors` object).
+`POST /api/forecast` takes `{"y": [floats], "h": 96, "backend": "both" | "fp32" | "ternary"}`
+and answers
+`{"h": 96, "levels": [...], "results": {"fp32": {"q": [[21 floats] ... 96], "ms": 10.4},
+"ternary": {"q": [...], "ms": 13.2}}}`. In `q[i][k]`, `i` is the horizon step and
+`levels[k]` the quantile; level index 10 is the median. If one backend fails the other
+still answers, and the response carries an `errors` object.
 
 ## Notes
 
