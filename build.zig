@@ -204,6 +204,20 @@ pub fn build(b: *std.Build) void {
     });
     ts_test_mod.addImport("timestral", ts_lib);
     ts_test_mod.addImport("framework", fw_mod);
+
+    // -Drequire-parity=true turns "the 21 MB checkpoint is not downloaded" from a
+    // SkipZigTest into a failure. Local runs stay convenient; CI's parity job must
+    // not go green on tests that never executed.
+    const require_parity = b.option(
+        bool,
+        "require-parity",
+        "fail instead of skipping the Timestral parity tests when modeldata is missing",
+    ) orelse false;
+    const test_opts = b.addOptions();
+    test_opts.addOption(bool, "require_parity", require_parity);
+    const test_opts_mod = test_opts.createModule();
+    ts_mod.addImport("test_options", test_opts_mod);
+    ts_test_mod.addImport("test_options", test_opts_mod);
     const ts_tests = b.addTest(.{ .root_module = ts_test_mod });
     const run_ts_tests = b.addRunArtifact(ts_tests);
 

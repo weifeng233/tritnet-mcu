@@ -25,6 +25,10 @@ const engine = ts.engine;
 const evalmod = ts.eval;
 const fixture = ts.fixture;
 const timing = @import("framework").timing;
+// Build option (-Drequire-parity=true). Local runs may skip the parity tests when
+// the 21 MB checkpoint has not been downloaded; CI sets this so a missing model is
+// a red build instead of a green one that tested nothing.
+const test_options = @import("test_options");
 
 const clib = @cImport({
     @cInclude("stdio.h");
@@ -236,7 +240,7 @@ fn cmdEval(io: std.Io, gpa: std.mem.Allocator, path: []const u8, args: EvalArgs)
             var opts = engine.Options{};
             opts.symmetric = true;
             const one = try eng.forecast(gpa, ctx[r * args.ctx ..][0..args.ctx], 1, args.ctx, args.h, opts);
-            @memcpy(quant[r * args.h * cfg.n_knots ..][0..args.h * cfg.n_knots], one);
+            @memcpy(quant[r * args.h * cfg.n_knots ..][0 .. args.h * cfg.n_knots], one);
             gpa.free(one);
         }
     }
@@ -267,10 +271,10 @@ fn cmdEval(io: std.Io, gpa: std.mem.Allocator, path: []const u8, args: EvalArgs)
             \\"strokes":{d},"ctx":{d},"h":{d},"pinball":{d:.6},"mae":{d:.6},"mase":{d:.6},"cov90":{d:.4},
             \\"beats_naive":{d:.4},"ms_total":{d:.2},"ms_per_stroke":{d:.3}}}
         , .{
-            path, params, tern_params, stat.size,
-            @as(f64, @floatFromInt(stat.size * 8)) / @as(f64, @floatFromInt(params)),
-            args.n, args.ctx, args.h,
-            m.pinball, m.mae, m.mase, m.cov90, m.beat_naive, ms, ms / @as(f64, @floatFromInt(args.n)),
+            path,                                                                     params, tern_params,                          stat.size,
+            @as(f64, @floatFromInt(stat.size * 8)) / @as(f64, @floatFromInt(params)), args.n, args.ctx,                             args.h,
+            m.pinball,                                                                m.mae,  m.mase,                               m.cov90,
+            m.beat_naive,                                                             ms,     ms / @as(f64, @floatFromInt(args.n)),
         });
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = jp, .data = body });
         say("report   {s}\n", .{jp});
@@ -546,11 +550,21 @@ const Comparator = struct {
     }
 };
 
+/// Turn "the model is not on this machine" into a skip -- except under
+/// -Drequire-parity=true, where it is a failure. A parity test that silently
+/// skips in CI is worse than no parity test: it reports success for work it
+/// did not do.
+fn skipUnlessRequired(err: anyerror, comptime what: []const u8, path: []const u8) anyerror {
+    if (test_options.require_parity) return err;
+    std.debug.print("skip parity: {s} at {s} unavailable ({s})\n", .{ what, path, @errorName(err) });
+    return error.SkipZigTest;
+}
+
 test "zig decode block matches the reference fixtures" {
     const gpa = testing.allocator;
-    var fx = fixture.Fixture.load(gpa, std.testing.io, FIXTURE) catch return error.SkipZigTest;
+    var fx = fixture.Fixture.load(gpa, std.testing.io, FIXTURE) catch |err| return skipUnlessRequired(err, "fixture", FIXTURE);
     defer fx.deinit();
-    var m = weights.load(gpa, std.testing.io, SAFETENSORS) catch return error.SkipZigTest;
+    var m = weights.load(gpa, std.testing.io, SAFETENSORS) catch |err| return skipUnlessRequired(err, "safetensors", SAFETENSORS);
     defer m.deinit();
 
     const inputs_t = try fx.get("inputs");
@@ -588,14 +602,14 @@ test "zig decode block matches the reference fixtures" {
 
 test "engine forecast (padding, clampsym, refine, cap) matches the reference" {
     const gpa = testing.allocator;
-    var fx = fixture.Fixture.load(gpa, std.testing.io, FIXTURE) catch return error.SkipZigTest;
+    var fx = fixture.Fixture.load(gpa, std.testing.io, FIXTURE) catch |err| return skipUnlessRequired(err, "fixture", FIXTURE);
     defer fx.deinit();
     const inputs_t = try fx.get("inputs");
     const expected = try fx.get("forecast_sym"); // fc.forecast(..., symmetric_averaging=True)
     const rows = inputs_t.dims[0];
     const ctx = inputs_t.dims[1];
 
-    var m = weights.load(gpa, std.testing.io, SAFETENSORS) catch return error.SkipZigTest;
+    var m = weights.load(gpa, std.testing.io, SAFETENSORS) catch |err| return skipUnlessRequired(err, "safetensors", SAFETENSORS);
     var eng = engine.Engine.fromModel(m, gpa);
     defer eng.deinit();
     m = undefined;
@@ -625,13 +639,20 @@ test "engine forecast (padding, clampsym, refine, cap) matches the reference" {
 
 test "packed artifact round-trips trits, scales and fp32 tensors" {
     const gpa = testing.allocator;
-    var m = weights.load(gpa, std.testing.io, SAFETENSORS) catch return error.SkipZigTest;
+    var m = weights.load(gpa, std.testing.io, SAFETENSORS) catch |err| return skipUnlessRequired(err, "safetensors", SAFETENSORS);
     defer m.deinit();
     var stats = weights.QuantStats{};
     try weights.ternarizeModel(&m, &stats);
-    const path = "zig-out/timestral_roundtrip.bin";
-    const n = try artifact.save(&m, gpa, std.testing.io, path);
-    try testing.expect(n > 0);
+    // Written into a test temp dir, not zig-out/: `zig build test` has to pass in a
+    // clean clone, where zig-out/ does not exist yet.
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.testing.io, &buf);
+    const path = try std.fs.path.join(gpa, &.{ buf[0..n], "timestral_roundtrip.bin" });
+    defer gpa.free(path);
+    const written = try artifact.save(&m, gpa, std.testing.io, path);
+    try testing.expect(written > 0);
     var back = try artifact.load(gpa, std.testing.io, path);
     defer back.deinit();
     try testing.expectEqual(m.cfg.d_model, back.cfg.d_model);
@@ -640,5 +661,4 @@ test "packed artifact round-trips trits, scales and fp32 tensors" {
     try testing.expectEqualSlices(i8, m.layers[0].attn[0].wqkv.trits[0..512], back.layers[0].attn[0].wqkv.trits[0..512]);
     try testing.expectEqualSlices(f32, m.layers[0].attn[0].wqkv.scales, back.layers[0].attn[0].wqkv.scales);
     try testing.expectEqualSlices(f32, m.forecast_query, back.forecast_query);
-    std.Io.Dir.cwd().deleteFile(std.testing.io, path) catch {};
 }

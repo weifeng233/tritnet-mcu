@@ -49,10 +49,17 @@ fn mapErr(e: anyerror) Error {
 
 /// Load the released checkpoint (fp32 weights, `model.safetensors`). The header is
 /// parsed in a short-lived arena; every tensor lands in the model's own arena.
+///
+/// A missing or unreadable file keeps its own error name rather than being folded
+/// into `Truncated`: "the checkpoint was never downloaded" and "the checkpoint is
+/// corrupt" need different fixes, and the parity tests print whichever one happened.
 pub fn load(backing: std.mem.Allocator, io: std.Io, path: []const u8) !model.Model {
     var scratch = std.heap.ArenaAllocator.init(backing);
     defer scratch.deinit();
-    const file_bytes = std.Io.Dir.cwd().readFileAlloc(io, path, scratch.allocator(), .limited(1 << 30)) catch return error.Truncated;
+    const file_bytes = std.Io.Dir.cwd().readFileAlloc(io, path, scratch.allocator(), .limited(1 << 30)) catch |err| switch (err) {
+        error.StreamTooLong => return error.Truncated,
+        else => |e| return e,
+    };
     var f = try safetensors.File.openBytes(scratch.allocator(), file_bytes);
     var m = try model.Model.create(backing, model.config5m());
     errdefer m.deinit();
