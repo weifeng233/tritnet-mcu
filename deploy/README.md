@@ -56,7 +56,7 @@ ternary matmul is add/skip/subtract over the packed trits with one scale per out
 ```json
 {"model": "Timestral-5M", "levels": [0.01, "...", 0.99], "h_values": [96, 192],
  "backends": [{"id": "fp32", "params": 5205504, "bytes": 20843960},
-              {"id": "ternary", "params": 5205504, "bytes": 1152066, "bits_per_weight": 1.77}],
+              {"id": "ternary", "params": 5205504, "bytes": 1152070, "bits_per_weight": 1.77}],
  "eval": {"fp32": {...}, "ternary": {...}}}
 ```
 
