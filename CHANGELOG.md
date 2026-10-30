@@ -4,6 +4,22 @@ All notable changes to this repository. Numbers come from the committed artifact
 eval records. If a figure here disagrees with a document, both are wrong and should be
 fixed together.
 
+## Unreleased
+
+### Changed
+
+- The README is an overview of the framework. Each example carries its own README
+  with its measurements and commands: `examples/gpt_names/README.md`,
+  `examples/gesture_cnn/README.md`, `examples/liquid_sine/README.md` and
+  `examples/timestral_sketch/README.md`.
+- The Chinese README and the two Chinese pages
+  (`examples/gpt_names/web/index.html`, `examples/gesture_cnn/web/tinyml.html`) were
+  rewritten: standard terminology (`trit`, `checkpoint`), neutral table headers,
+  no metaphorical wording, no contrast constructions of the form "X, not Y", and no
+  colloquial or anthropomorphic phrasing. Numbers, commands and paths are unchanged.
+- The C-vs-Zig page now states that its 2026-08-31 measurements differ from the
+  2026-10-30 numbers in `docs/PERFORMANCE.md` and that the cause was not established.
+
 ## v0.3.0 (2026-10-30)
 
 ### Changed

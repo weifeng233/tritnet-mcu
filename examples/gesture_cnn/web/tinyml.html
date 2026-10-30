@@ -104,12 +104,12 @@
 </div></nav>
 
 <header class="hero"><div class="wrap">
-  <h1>同一个管线的另一种小模型：<b>TinyML 三元 1D-CNN</b></h1>
-  <p class="sub">4 类手势识别 · 3 轴加速度计窗口 · 2,524 参数 · 54,208 MACs · 权重压到 1.6 bit · 单文件训练 + 推理，除 libc 零依赖</p>
+  <h1><b>TinyML 三元 1D-CNN</b> 手势分类器</h1>
+  <p class="sub">4 类手势识别 · 3 轴加速度计窗口 · 2,524 参数 · 54,208 MACs · 1.6 bit/参数 · 单文件完成训练与推理，除 libc 外无依赖</p>
   <div class="hero-nums">
     <div class="hnum"><div class="v">100.0%</div><div class="l">QAT 验证精度</div></div>
-    <div class="hnum"><div class="v">15.0x</div><div class="l">权重压缩 vs fp32</div></div>
-    <div class="hnum"><div class="v">1.6 bit</div><div class="l">每权重（含缩放）</div></div>
+    <div class="hnum"><div class="v">15.0x</div><div class="l">相对 fp32 的压缩比</div></div>
+    <div class="hnum"><div class="v">1.6 bit</div><div class="l">每参数比特数（含缩放）</div></div>
     <div class="hnum"><div class="v">38.0 µs</div><div class="l">单次推理延迟</div></div>
   </div>
   <p class="sub" style="margin-top:18px; font-size:12.5px;">实测于 AMD Ryzen 9 7940H（AVX2，主机编译）· 2026-09-02 运行 <code style="font-size:11px;">zig-out/bin/example-cnn.exe</code> 采集 · 数据集为固定种子确定性合成，无需外部下载</p>
@@ -117,7 +117,7 @@
 
 <section id="task"><div class="wrap">
   <h2>任务 <span class="tag">GESTURE RECOGNITION</span></h2>
-  <p class="lead">这是 TinyML 社区最经典的传感器任务之一（EdgeImpulse / MLPerf-Tiny 风格）：对一段 3 轴加速度计时间窗做 4 分类。数据由 <code>examples/gesture_cnn.zig</code> 内置的确定性生成器合成，每个类别带随机相位、幅度抖动与逐样本噪声，因此整条管线从固定种子完全可复现，无需外部数据集。</p>
+  <p class="lead">任务为 4 类手势识别：输入 3 轴加速度计时间窗，输出类别。数据由 <code>examples/gesture_cnn/gesture_cnn.zig</code> 中的确定性生成器合成，每类样本带随机相位、幅度抖动与逐样本噪声，固定种子下可完全复现，不需要外部数据集。</p>
   <div class="metrics">
     <div class="metric"><div class="t">输入</div><div class="v">3×128</div><div class="cap">x / y / z 三轴 × 128 采样</div></div>
     <div class="metric"><div class="t">类别</div><div class="v">4</div><div class="cap">rest / shake / circle / tap</div></div>
@@ -126,20 +126,20 @@
   </div>
   <div class="card" style="margin-top:20px;">
     <h3>四类手势的合成波形</h3>
-    <div class="note">网络必须学波形形状，而不是背样本——每类都有随机相位和幅度抖动，噪声叠加在所有轴上。</div>
+    <div class="note">每类样本的相位与幅度均随机，噪声叠加在所有轴上，同一类别内的波形形状存在差异。</div>
     <div class="grid2">
       <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">rest（静息）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">三轴缓慢低幅漂移，每窗 &lt;0.3 周期，振幅 0.22。</p></div>
       <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">shake（摇晃）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">集中于 x 轴的快速震荡，每窗 8–12 周期，振幅 1.0±0.2。</p></div>
-      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">circle（画圈）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">x/y 正交对，每窗 2–4 周期，z 轴安静。</p></div>
-      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">tap（轻敲）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">随机位置、随机轴上的衰减脉冲（宽度 14–21），振幅 1.4–2.2 带随机符号。</p></div>
+      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">circle（画圈）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">x/y 正交对，每窗 2–4 周期，z 轴幅值接近 0。</p></div>
+      <div class="card" style="margin-bottom:0;"><b style="color:var(--c-teal)">tap（轻敲）</b><p style="font-size:13px; color:var(--muted); margin-top:4px;">随机位置、随机轴上的衰减脉冲（宽度 14–21），振幅 1.4–2.2，符号随机。</p></div>
     </div>
-    <div class="callout"><b>数据集可复现：</b>类标签按 <code>idx % 4</code> 轮转填入，再做一次 Fisher-Yates 洗牌，使验证集类别混合均匀。噪声标准差 0.06。</div>
+    <div class="callout"><b>数据集构造：</b>类标签按 <code>idx % 4</code> 轮转填入，再做一次 Fisher-Yates 洗牌，使验证集类别混合均匀。噪声标准差 0.06。</div>
   </div>
 </div></section>
 
 <section id="arch"><div class="wrap">
   <h2>网络架构 <span class="tag">2,524 PARAMS · 54,208 MACs</span></h2>
-  <p class="lead">典型的 TinyML 短 1D-CNN：两层卷积（每层接 ReLU + 步长 2 最大池化）后接全连接分类头。所有卷积核与稠密层都量化成 <b style="color:var(--text)">{-1, 0, +1}</b> 三元权重，偏置保持 fp32（共 28 个，占比极小——专门用来吸收三元网格表达不了的东西）。</p>
+  <p class="lead">网络为两层卷积（每层接 ReLU 与步长 2 最大池化）后接全连接分类头。所有卷积核与全连接层量化为 <b style="color:var(--text)">{-1, 0, +1}</b> 三元权重，偏置保持 fp32，共 28 个，用于表示三元权重无法表达的常量偏移。</p>
   <div class="card">
     <div class="arch">
       <div class="node"><div class="n">Input</div><div class="s">3 × 128</div></div>
@@ -156,31 +156,31 @@
       <div class="arrow">▼</div>
       <div class="node"><div class="n">输出</div><div class="s">rest / shake / circle / tap</div></div>
     </div>
-    <div class="callout orange"><b>参数账目：</b>卷积核 C1·C0·K1 + C2·C1·K2 + 稠密层 4×448 = 2496 个三元权重；加 28 个 fp32 偏置（C1=8 + C2=16 + 输出 4）＝ 2524 总参数。MAC 数 = C1·T1·(C0·K1) + C2·T2·(C1·K2) + 4·FC_IN = 54,208。</div>
+    <div class="callout orange"><b>参数量构成：</b>卷积核 C1·C0·K1 + C2·C1·K2 + 稠密层 4×448 = 2496 个三元权重；加 28 个 fp32 偏置（C1=8 + C2=16 + 输出 4）＝ 2524 总参数。MAC 数 = C1·T1·(C0·K1) + C2·T2·(C1·K2) + 4·FC_IN = 54,208。</div>
   </div>
 </div></section>
 
 <section id="quant"><div class="wrap">
   <h2>三元量化 <span class="tag">BITNET · QAT</span></h2>
-  <p class="lead">量化语义与仓库里的 micro-GPT 管线完全一致：先做 fp32 预训练，随后用 <b style="color:var(--text)">absmean 缩放</b>把每个投影张量化为三元，再用 <b style="color:var(--text)">直通估计（STE）</b>做量化感知训练（QAT）把精度补回来。每个卷积核与稠密层按张量独立得一个缩放因子，激活在训练时量化到 8-bit。</p>
+  <p class="lead">量化方法与仓库中的 micro-GPT 样例一致：先做 fp32 预训练，随后按 <b style="color:var(--text)">absmean 缩放</b>将每个投影张量化为三元，再用 <b style="color:var(--text)">直通估计器（STE）</b>做量化感知训练（QAT）恢复精度。每个卷积核与全连接层分别使用一个缩放因子，激活值在训练时量化为 8 位。</p>
   <div class="card">
-    <h3>BitNet 三值化规则</h3>
+    <h3>BitNet 三元量化规则</h3>
     <table>
       <tr><th>项</th><th>取值</th></tr>
       <tr><td>缩放因子</td><td>scale = mean(|W|)，即权重绝对值的均值</td></tr>
       <tr><td>阈值</td><td>t = scale / 2</td></tr>
-      <tr><td>三值映射</td><td>W &gt; t → +1 · W &lt; -t → -1 · 其余 → 0</td></tr>
+      <tr><td>三元映射</td><td>W &gt; t → +1 · W &lt; -t → -1 · 其余 → 0</td></tr>
       <tr><td>部署值</td><td>q = trit × scale</td></tr>
-      <tr><td>梯度掩码（STE）</td><td>只在 |W| &lt; 2t 处保留梯度，别处置 0</td></tr>
+      <tr><td>梯度掩码（STE）</td><td>仅在 |W| &lt; 2t 处保留梯度，其余位置置 0</td></tr>
       <tr><td>激活量化</td><td>训练时 per-token 8-bit（舍入后 STE 反向为恒等）</td></tr>
     </table>
-    <div class="callout"><b>为什么偏置保持 fp32：</b>三元网格只能表达 ±scale 和 0 三种值，偏置的作用就是吸收常数偏移——把它们也量化成三元，会凭空引入误差且几乎没有压缩收益（28 个参数 vs 2496 个权重）。</div>
+    <div class="callout"><b>偏置保持 fp32 的原因：</b>三元权重只能取 ±scale 与 0 三个值，偏置用于表示常量偏移。将偏置也量化为三元会引入额外误差，且压缩收益很小（28 个参数对 2,496 个权重）。</div>
   </div>
 </div></section>
 
 <section id="train"><div class="wrap">
-  <h2>训练管线 <span class="tag">FP32 PRETRAIN → TERNARY QAT</span></h2>
-  <p class="lead">单进程内依次执行：<b style="color:var(--text)">fp32 预训练</b>（Adam + 余弦学习率，mini-batch 交叉熵，批量 32）→ 记录 <b style="color:var(--text)">朴素 PTQ</b>（直接三值化、不做 QAT）作为对照 → 重置 Adam → <b style="color:var(--text)">BitNet 三元 QAT</b>。下方损失曲线把两段画在一起（x 轴为累计步数，y 轴为对数刻度）。注意 QAT 第 1 步的 loss 从 fp32 收敛态的 0.002 直接跳回 15.66——这就是三值化冲击本身，QAT 随后用 1500 步把它重新压回去。</p>
+  <h2>训练流程 <span class="tag">FP32 PRETRAIN → TERNARY QAT</span></h2>
+  <p class="lead">单进程内依次执行：<b style="color:var(--text)">fp32 预训练</b>（Adam 优化器、余弦学习率、mini-batch 交叉熵，批量 32）；记录 <b style="color:var(--text)">朴素 PTQ</b>（直接三元化、不做 QAT）作为对照；重置 Adam；执行 <b style="color:var(--text)">BitNet 三元 QAT</b>。下方曲线将两段损失画在一起，x 轴为累计步数，y 轴为对数刻度。QAT 第 1 步的损失为 15.66，fp32 收敛时为 0.002；QAT 在 1,500 步内将损失降至原水平。</p>
   <div class="card chartbox">
     <div class="legend">
       <span><i style="background:var(--c-blue)"></i>fp32 阶段（2000 步，4.64 s）</span>
@@ -195,7 +195,7 @@
 
 <section id="results"><div class="wrap">
   <h2>精度结果 <span class="tag">FLOAT ACTIVATIONS</span></h2>
-  <p class="lead">验证集 800 个样本。朴素 PTQ 直接把精度打到 <b style="color:var(--bad)">65.75%</b>——三类混淆得一团糟；QAT 则把 <b style="color:var(--text)">全部 100%</b> 拉了回来，回收了 fp32→PTQ 精度差距的 <b style="color:var(--text)">99.9%</b>。这就是量化感知训练的价值所在。</p>
+  <p class="lead">验证集共 800 个样本。朴素 PTQ 的验证精度为 <b style="color:var(--bad)">65.75%</b>，混淆矩阵中多个类别相互混淆；QAT 后验证精度为 <b style="color:var(--text)">100%</b>，相当于恢复 fp32 与 PTQ 之间精度差距的 <b style="color:var(--text)">99.9%</b>。</p>
   <div class="card">
     <div class="bars">
       <div class="row"><span class="lab f">fp32</span><div class="track"><div class="fill f" data-w="100"></div></div><span class="val">train 100% · val 100%</span></div>
@@ -212,19 +212,19 @@
 
   <div class="card">
     <h3>三元权重分布</h3>
-    <div class="note">QAT 训练完成后，统计全部 2496 个三元权重中 -1 / 0 / +1 的占比。接近四分之一权重被剪到 0，这正是三值化的稀疏红利。</div>
+    <div class="note">QAT 训练完成后，统计全部 2,496 个三元权重中 -1 / 0 / +1 的占比。接近四分之一的权重取值为 0。</div>
     <div class="bars">
       <div class="row"><span class="lab p">−1</span><div class="track"><div class="fill p" data-w="42.7"></div></div><span class="val">42.7%</span></div>
       <div class="row"><span class="lab" style="color:var(--dim)">0</span><div class="track"><div class="fill" data-w="21.2" style="background:linear-gradient(90deg,#2a3a55,#4a5f85)"></div></div><span class="val">21.2%</span></div>
       <div class="row"><span class="lab t">+1</span><div class="track"><div class="fill t" data-w="36.1"></div></div><span class="val">36.1%</span></div>
     </div>
-    <div class="callout"><b>结果解读：</b>朴素三值化把部分活跃权重硬切到 0，导致 val 精度崩到 65.75%；QAT 让网络在训练中主动适应三元网格——权重学会把无关紧要的系数归零、把重要的推向 ±1，于是精度与 fp32 完全持平，而每个权重仍只占 1.6 bit。</div>
+    <div class="callout"><b>结果解读：</b>朴素三元化将部分权重置为 0，验证精度降至 65.75%；QAT 在训练中更新权重，使幅度较小的系数取 0、幅度较大的系数取 ±1，验证精度与 fp32 相同，而每个参数仍占 1.6 bit。</div>
   </div>
 </div></section>
 
 <section id="confusion"><div class="wrap">
   <h2>混淆矩阵 <span class="tag">QAT · VAL SPLIT</span></h2>
-  <p class="lead">800 个验证样本在 QAT 模型上的混淆矩阵（行 = 真实类别，列 = 预测类别）。这是一个近乎完美的对角矩阵——每类都 100% 正确识别。</p>
+  <p class="lead">800 个验证样本在 QAT 模型上的混淆矩阵（行 = 真实类别，列 = 预测类别）。对角线以外元素为 0，四类均 100% 正确识别。</p>
   <div class="card">
     <table>
       <tr><th></th><th>rest</th><th>shake</th><th>circle</th><th>tap</th><th>recall</th></tr>
@@ -238,7 +238,7 @@
 
 <section id="storage"><div class="wrap">
   <h2>存储与延迟 <span class="tag">PACKED · 5 TRITS/BYTE</span></h2>
-  <p class="lead">三值权重用 <b style="color:var(--text)">5 个三值位/字节</b>的基-3 打包（compilade 的方案，llama.cpp 的 BitNet 也用这套）：编码时对基-3 权重做天花板重缩放，解码时用乘法+移位、免除法。打包后权重从 10,096 字节压到 672 字节，<b style="color:var(--text)">15.0x</b> 小于 fp32。</p>
+  <p class="lead">三元权重按每字节 5 个 trit 进行基-3 打包（compilade 的方案，llama.cpp 的 BitNet 权重使用同一方案）：编码时做向上取整重标定，解码使用乘法与移位，不含除法。打包后权重由 10,096 字节降至 672 字节，为 fp32 的 <b style="color:var(--text)">1/15.0</b>。</p>
   <div class="card">
     <h3>存储对比</h3>
     <div class="bars">
@@ -256,7 +256,7 @@
       <tr><td>fp32 权重</td><td>38.77 µs</td><td>1398.4M</td></tr>
       <tr><td>三元权重</td><td class="good">38.00 µs</td><td>1426.6M</td></tr>
     </table>
-    <div class="callout"><b>注意：</b>这是<em>主机</em> CPU 上跑 float 激活的参考延迟——x86 上 fp32 靠 AVX2 FMA，查表乘加被优化得很好，三元核只是基本持平（38.00 vs 38.77 µs，2% 差异在运行间噪声内），并没有因为量化而变快。真正的收益是<b>把权重从 10KB 压到 672B</b>（对缓存 / 片上存储 / 指令流都是质变），以及三值核可用「加/跳过/减」的加法替代乘法。在真正的 MCU 上，三元核的免乘法优势才会体现为吞吐优势。</div>
+    <div class="callout"><b>注意：</b>以上为<em>主机</em> CPU 上使用 float 激活的测量结果。x86 平台 fp32 使用 AVX2 FMA，三元内核的延迟与之基本持平（38.00 µs 对 38.77 µs，差异处于运行间波动范围内），量化未使延迟下降。当前收益为<b>权重由 10,096 字节降至 672 字节</b>，可减少缓存与片上存储占用；三元内核可用加、跳过、减替代乘法。该替代在 MCU 上的吞吐量收益未在本仓库测量。</div>
   </div>
 
   <div class="card">
@@ -267,7 +267,7 @@
       <tr><td>重载后 val 精度 / loss</td><td>100.00% / 0.001324</td></tr>
       <tr><td>结果</td><td class="good">round-trip: OK（无损）</td></tr>
     </table>
-    <p class="note" style="margin-top:10px;">导出后重新加载打包文件并重跑验证集，必须逐点复现导出前的精度与 loss——这证明打包编码完全无损。</p>
+    <p class="note" style="margin-top:10px;">导出后重新加载打包文件并在验证集上重跑，精度与损失与导出前相同，说明编码与解码无损。</p>
   </div>
 </div></section>
 
@@ -275,21 +275,21 @@
   <h2>构建与运行 <span class="tag">BUILD</span></h2>
   <div class="grid2">
     <div class="card">
-      <h3>一条命令跑完整个管线</h3>
-      <div class="cmd"><span class="p">$</span> zig build --release=fast cnn<br><span class="p">→</span> 训练 → 量化 → 验证 → 导出模型+验证集</div>
+      <h3>一条命令完成全部阶段</h3>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast example-cnn<br><span class="p">→</span> 训练 → 量化 → 验证 → 导出模型+验证集</div>
       <div class="cmd"><span class="p">$</span> ./zig-out/bin/example-cnn.exe<br><span class="p">→</span> examples/gesture_cnn/modeldata/cnn1d_packed.bin（672 B）<br><span class="p">→</span> examples/gesture_cnn/modeldata/cnn1d_valset.bin（验证集）</div>
       <div class="cmd"><span class="p">$</span> zig build test <span class="p"># 卷积/池化/梯度/端到端梯度检查 单元测试</span></div>
     </div>
     <div class="card">
       <h3>双部署路径</h3>
-      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">除了 Zig 主管线，仓库还提供 <code>examples/gesture_cnn/c/cnn1d_inference.c</code> 作为<em>独立</em>的部署引擎：它读取 <code>examples/gesture_cnn/modeldata/cnn1d_packed.bin</code> 与验证集，解码打包 trits 后以 <b style="color:var(--text)">add / skip / subtract</b> 方式跑三元核——不用任何逐权重浮点表。两条路径必须逐点复现相同的验证精度与混淆矩阵。</p>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">仓库另提供 <code>examples/gesture_cnn/c/cnn1d_inference.c</code> 作为<em>独立</em>部署引擎：读取 <code>examples/gesture_cnn/modeldata/cnn1d_packed.bin</code> 与验证集，解码 trit 后按加、跳过、减的方式运行模型，不使用逐权重浮点表。两条路径的验证精度与混淆矩阵相同。</p>
       <div class="cmd"><span class="p">$</span> make cnn-c<br><span class="p">$</span> ./examples/gesture_cnn/cnn1d-c examples/gesture_cnn/modeldata/cnn1d_packed.bin examples/gesture_cnn/modeldata/cnn1d_valset.bin</div>
     </div>
   </div>
 </div></section>
 
 <footer><div class="wrap">
-  数据于 2026-09-02 在 AMD Ryzen 9 7940H 上运行 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/example-cnn.exe</code> 实测采集 · TritNet-MCU 仓库 · TinyML 1D-CNN 可视化页
+  数据于 2026-09-02 在 AMD Ryzen 9 7940H 上运行 <code style="font-family:ui-monospace,Consolas,monospace;">zig-out/bin/example-cnn.exe</code> 采集 · TritNet-MCU 仓库 · TinyML 1D-CNN 可视化页
 </div></footer>
 
 <script>

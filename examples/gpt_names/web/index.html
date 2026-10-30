@@ -143,8 +143,8 @@
 </div></nav>
 
 <header class="hero"><div class="wrap">
-  <h1>同一颗 GPT 的两副躯体：<span class="c">C</span> 与 <span class="z">Zig</span></h1>
-  <p class="sub">4,192 参数的字符级 Transformer · 零依赖 · 单文件训练 + 推理 · 本页全部数据为 2026-08-31 本机实测（Zig 训练内核向量化优化后重测）</p>
+  <h1>microGPT 的两种实现：<span class="c">C</span> 与 <span class="z">Zig</span></h1>
+  <p class="sub">4,192 参数的字符级 Transformer · 无外部依赖 · 单文件完成训练与推理 · 本页数据为 2026-08-31 本机测量（Zig 训练内核向量化后重测）</p>
   <div class="hero-nums">
     <div class="hnum"><div class="v"><span class="c">5.39M</span> / <span class="z">5.57M</span></div><div class="l">tok/sec 推理吞吐（中位数）</div></div>
     <div class="hnum"><div class="v"><span class="c">1.63s</span> / <span class="z">1.22s</span></div><div class="l">全流程耗时（训练+采样+基准）</div></div>
@@ -155,7 +155,7 @@
 
 <section id="perf"><div class="wrap">
   <h2>实测性能 <span class="tag">MEASURED</span></h2>
-  <p class="lead">两个版本跑完全相同的 5,000,000 次单 token 采样基准循环。Zig 训练内核向量化之后，上一版的"快慢交叉"已被抹平：<b style="color:var(--text)">推理与全流程 Zig 双双领先</b>。</p>
+  <p class="lead">两个版本执行相同的 5,000,000 次单 token 采样基准循环。Zig 训练内核向量化后，推理吞吐与全流程耗时两项均为 Zig 较高：<b style="color:var(--text)">推理吞吐 +3.4%，全流程耗时 −25%</b>。</p>
 
   <div class="grid2">
     <div class="card">
@@ -202,7 +202,7 @@
       <div class="seg-train z" style="width:26.2%">0.32s</div>
       <div class="seg-bench z" style="width:73.8%">0.90s</div>
     </div>
-    <div class="callout"><b>Zig 这次为什么全面领先？</b>上一版测得的"快慢交叉"已被训练向量化抹平：反传内核 <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">linear_bwd_x</code> / <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">linear_bwd_w</code> / <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">rmsnorm_bwd</code> 从朴素标量循环改写为 8-lane <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">@mulAdd</code> FMA，嵌入相加与梯度范数（sumsq）同步向量化，Adam 的偏置校正项移出内循环——训练段从 ~1.06 s 压到 ~0.32 s（3 倍+），而推理内核本来就更快，于是两项全胜。C 版反传仍是标量循环，训练段 ~0.70 s 维持原样。<b>算法与模型完全相同，差别全部来自内核工程。</b></div>
+    <div class="callout"><b>Zig 领先的来源：</b>反传内核 <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">linear_bwd_x</code> / <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">linear_bwd_w</code> / <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">rmsnorm_bwd</code> 由标量循环改写为 8-lane <code style="background:#0a0e15;padding:1px 5px;border-radius:4px;color:#b8c7de;">@mulAdd</code> FMA，嵌入相加与梯度范数（sumsq）同样向量化，Adam 的偏置校正项移出内循环。训练段由约 1.06 s 降至约 0.32 s（3 倍以上），推理内核未改动。C 版反传仍为标量循环，训练段约 0.70 s。<b>两个版本的算法与模型相同，差异来自内核实现。</b></div>
   </div>
 
   <div class="card">
@@ -213,13 +213,13 @@
       <tr><td>gcc -Ofast</td><td class="c">AVX2</td><td class="c">5.23M</td><td>2026-08-31 实测 · C · 5 次运行中位数</td></tr>
       <tr><td>zig build --release=fast</td><td class="z">AVX2</td><td class="z">5.49M</td><td>2026-08-31 实测 · Zig · 5 次运行中位数</td></tr>
     </table>
-    <p class="note" style="margin-top:8px; margin-bottom:0;">同一台 7940H 上，zig cc（clang）-Ofast 比 gcc -Ofast 快约 11%。会话间存在几个百分点的漂移，跨会话数字请在同一测量会话内对比。</p>
+    <p class="note" style="margin-top:8px; margin-bottom:0;">同一台 7940H 上，zig cc（clang）-Ofast 的吞吐比 gcc -Ofast 高约 11%。会话间存在几个百分点的波动，不同会话的数字不宜直接比较。本页数值测量于 2026-08-31，与 docs/PERFORMANCE.md 中 2026-10-30 的数值不同，原因未查明。</p>
   </div>
 </div></section>
 
 <section id="train"><div class="wrap">
   <h2>训练曲线 <span class="tag">20,000 STEPS · SEED 42</span></h2>
-  <p class="lead">两个版本用同一随机种子（xorshift64, seed=42）训练同一模型。曲线几乎重合——最终平均 loss 仅差 <b style="color:var(--text)">0.0005 nats</b>（2.2189 vs 2.2194），逐点最大偏差 0.054，来自浮点运算顺序差异的放大；向量化反传没有引入系统性的精度损失。</p>
+  <p class="lead">两个版本使用同一随机种子（xorshift64, seed=42）训练同一模型。两条曲线基本重合：最终平均 loss 相差 <b style="color:var(--text)">0.0005 nats</b>（2.2189 与 2.2194），逐点最大偏差 0.054，来自浮点运算顺序差异；向量化反传未引入系统性精度损失。</p>
   <div class="card chartbox">
     <div class="legend">
       <span><i style="background:var(--c-blue)"></i>C 版</span>
@@ -233,7 +233,7 @@
 
 <section id="samples"><div class="wrap">
   <h2>生成名字 <span class="tag">TEMPERATURE 0.5</span></h2>
-  <p class="lead">训练完成后各采样 10 个名字。种子相同，但两版内核的浮点求和顺序不同，舍入差异在采样中被逐步放大——首个样例就已分叉（kayle vs kayley），风格却如出一辙。这就是字符级 GPT 的魅力。</p>
+  <p class="lead">训练完成后各采样 10 个名字。种子相同，但两个内核的浮点求和顺序不同，舍入差异在采样过程中逐步放大，首个样例即出现差异（kayle 与 kayley），后续样例风格相近。</p>
   <div class="card">
     <div class="samples">
       <div class="chipbox">
@@ -249,23 +249,23 @@
         </div>
       </div>
     </div>
-    <div class="callout blue">模型只有 <b>4,192 个参数</b>，2/3 的名字在训练集中从未出现过（测试集 loss 2.2039 &lt; 训练集 2.2054），是在泛化而非背诵。</div>
+    <div class="callout blue">模型只有 <b>4,192 个参数</b>，三分之二生成的名字未在训练集中出现（测试集 loss 2.2039 &lt; 训练集 2.2054），表明模型在生成新名字。</div>
   </div>
 </div></section>
 
 <section id="code"><div class="wrap">
   <h2>代码结构 <span class="tag">1 FILE · NO DEPS</span></h2>
-  <p class="lead">同样的算法骨架（加载语料 → tokenizer → 参数 → 前向/反向 → Adam → 打包权重 → 推理基准），两份实现。行数接近，但表达同一件事的成本完全不同。</p>
+  <p class="lead">算法骨架相同（加载语料 → tokenizer → 参数 → 前向/反向 → Adam → 打包权重 → 推理基准），共两份实现。行数接近，各项功能的代码量不同。</p>
   <div class="metrics">
     <div class="metric"><div class="t">源码行数（总 / 非空）</div>
       <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">1492 / 1319</span></div>
       <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:93.8%"></i></span><span class="n">1399 / 1300</span></div>
-      <div class="cap">Zig 行数已接近 C（−6%，反转向量化增加了显式宽度标注），且无需任何头文件与宏</div>
+      <div class="cap">Zig 行数接近 C（−6%，向量化反传增加了显式宽度标注），且不需要头文件与宏</div>
     </div>
     <div class="metric"><div class="t">SIMD 后端份数</div>
       <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">2 套</span></div>
       <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:50%"></i></span><span class="n">1 套</span></div>
-      <div class="cap">C 用 #ifdef 维护 AVX2 + NEON 双份内核；Zig 用 @Vector 单一源码自动降级到各架构宽度</div>
+      <div class="cap">C 用 #ifdef 维护 AVX2 与 NEON 两份内核；Zig 用 @Vector 一套源码，由编译器生成各架构宽度的指令</div>
     </div>
     <div class="metric"><div class="t">预处理器指令</div>
       <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">85 条</span></div>
@@ -275,17 +275,17 @@
     <div class="metric"><div class="t">底层 SIMD 表达</div>
       <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">391 处</span></div>
       <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:16%"></i></span><span class="n">64 处</span></div>
-      <div class="cap">C 直接写 _mm256_* / vld1q_* intrinsics；Zig 只有 @mulAdd(49) + @reduce(10) + @Vector 声明(5)，指令序列交给 codegen</div>
+      <div class="cap">C 直接使用 _mm256_* / vld1q_* intrinsics；Zig 使用 @mulAdd(49)、@reduce(10) 与 @Vector 声明(5)，具体指令由 codegen 生成</div>
     </div>
     <div class="metric"><div class="t">强制类型转换</div>
       <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:100%"></i></span><span class="n">隐式随处</span></div>
       <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:70%"></i></span><span class="n">显式 194 处</span></div>
-      <div class="cap">Zig 要求 @intCast / @ptrCast / @floatCast 逐点声明意图（@ptrCast 170、@intCast 16、@floatCast 3、@bitCast 2 …）</div>
+      <div class="cap">Zig 要求用 @intCast / @ptrCast / @floatCast 显式声明转换（@ptrCast 170、@intCast 16、@floatCast 3、@bitCast 2 …）</div>
     </div>
     <div class="metric"><div class="t">依赖</div>
       <div class="pair"><span class="who c">C</span><span class="mini"><i class="c" style="width:50%"></i></span><span class="n">libc</span></div>
       <div class="pair"><span class="who z">Zig</span><span class="mini"><i class="z" style="width:60%"></i></span><span class="n">libc + std</span></div>
-      <div class="cap">Zig 版仍通过 @cImport 调用 printf/fopen 与 c_allocator，移植刻意保留了 1:1 结构以便对照</div>
+      <div class="cap">Zig 版通过 @cImport 调用 printf/fopen 与 c_allocator，移植保留了与 C 一一对应的结构以便对照</div>
     </div>
   </div>
 
@@ -300,14 +300,14 @@
       <tr><td>位级技巧</td><td>union { float; int; }  punning</td><td><code>@bitCast</code>，类型安全且意图明确</td></tr>
       <tr><td>编译期常量</td><td><code>#define N_EMBD 16</code></td><td><code>const N_EMBD: usize = 16</code>（有类型、可被类型系统使用）</td></tr>
       <tr><td>构建</td><td>Makefile 或直接经 zig cc</td><td><code>zig build</code>，C 版作为对照 artifact 一并产出</td></tr>
-      <tr><td>安全网</td><td>UB 静默发生</td><td>Debug 模式自动越界检查 + 溢出检查</td></tr>
+      <tr><td>开发期检查</td><td>未定义行为不报错</td><td>Debug 模式越界检查 + 溢出检查</td></tr>
     </table>
   </div>
 </div></section>
 
 <section id="side"><div class="wrap">
   <h2>源码并排对比 <span class="tag">SIDE BY SIDE</span></h2>
-  <p class="lead">挑五个最有代表性的切面，看同一逻辑在两种语言里的样子。左 C 右 Zig。</p>
+  <p class="lead">选取五个有代表性的部分，展示同一逻辑在两种语言中的写法。左侧为 C，右侧为 Zig。</p>
   <div class="tabs" id="codeTabs">
     <button class="on" data-p="p1">SIMD 点积</button>
     <button data-p="p2">后端选择</button>
@@ -325,7 +325,7 @@
   lo = _mm_add_ps(lo, hi); lo = _mm_hadd_ps(lo, lo); lo = _mm_hadd_ps(lo, lo);
   return _mm_cvtss_f32(lo);
 }</pre></div>
-      <div class="code"><div class="cap z">Zig<span class="file">examples/gpt_names/fp32.zig · dot16（一份源码，x86/ARM 通吃）</span></div>
+      <div class="code"><div class="cap z">Zig<span class="file">examples/gpt_names/fp32.zig · dot16（一份源码，适用于 x86 与 ARM）</span></div>
 <pre data-lang="zig">inline fn dot16(a: *const [16]f32, b: *const [16]f32) f32 {
     const va0: Vec8 = a[0..8].*;
     const vb0: Vec8 = b[0..8].*;
@@ -335,7 +335,7 @@
     const p1 = va1 * vb1;
     return @reduce(.Add, p0 + p1);
 }</pre></div>
-      <div class="codenote">同样的数学。C 里“水平求和”要手工排布 cast/extract/hadd 指令树；Zig 里 <b style="color:var(--z-orange)">@reduce(.Add, …)</b> 一句话，codegen 按目标宽度（AVX2 8-lane / NEON 4-lane×2）自行生成。</div>
+      <div class="codenote">两段代码的数学相同。C 的水平求和需要手工组织 cast、extract 与 hadd 指令；Zig 使用 <b style="color:var(--z-orange)">@reduce(.Add, …)</b>，由 codegen 按目标宽度（AVX2 8-lane / NEON 4-lane×2）生成指令。</div>
     </div>
 
     <div class="pane" id="p2">
@@ -354,7 +354,7 @@
 
 const is_x86 = builtin.cpu.arch == .x86_64;
 const is_aarch64 = builtin.cpu.arch == .aarch64;</pre></div>
-      <div class="codenote">C 的 #ifdef 只是文本开关，宏内部拼错要等到展开后在某个架构上才爆炸；Zig 的 builtin 是有类型的编译期值，且因为内核本身架构无关，这段只用来打印名字。<b style="color:var(--text)">代价</b>：C 可以在 AVX2 上手工用 256-bit、在 NEON 上精心排 4-lane 寄存器，Zig 的统一源码放弃了这种逐架构雕刻。</div>
+      <div class="codenote">C 的 #ifdef 在预处理阶段做文本替换，宏内的错误要到展开并在对应架构上编译时才会暴露；Zig 的 builtin 是有类型的编译期值。由于内核与架构无关，这段代码只用于打印名称。<b style="color:var(--text)">代价</b>：C 可在 AVX2 上使用 256-bit 指令、在 NEON 上安排 4-lane 寄存器，Zig 的统一源码不具备这种按架构调整的能力。</div>
     </div>
 
     <div class="pane" id="p3">
@@ -370,7 +370,7 @@ const is_aarch64 = builtin.cpu.arch == .aarch64;</pre></div>
                    + 1065353216;
     return @bitCast(bits);
 }</pre></div>
-      <div class="codenote">union 型 punning 在 C 标准里是实现定义行为（clang/gcc 都支持，但 -strict-aliasing 是雷区）；Zig 的 <b style="color:var(--z-orange)">@bitCast</b> 是语言保证的一等操作，f32↔i32 位重解释无需 union。</div>
+      <div class="codenote">union 型 punning 在 C 标准中属于实现定义行为（clang 与 gcc 均支持，但与 -fstrict-aliasing 同时使用存在风险）；Zig 的 <b style="color:var(--z-orange)">@bitCast</b> 由语言规定，f32 与 i32 的位重解释不需要 union。</div>
     </div>
 
     <div class="pane" id="p4">
@@ -396,7 +396,7 @@ free(adam_v_wte);
 }
 /* ……程序结尾： */
 gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div>
-      <div class="codenote">诚实说明：Zig 版目前<b style="color:var(--text)">同样手动 free</b>（用 c_allocator 保持与 C 的 1:1 对照），没有用 arena 一步清零。差别在于 C 的 <code>float*</code> 一旦离开 calloc 就丢失长度，一切靠调用方记忆；Zig 的 <code>[]f32</code> 切片自带边界，Debug 构建下越界立刻 panic，ReleaseFast 才是裸行为。</div>
+      <div class="codenote">说明：Zig 版<b style="color:var(--text)">同样手动 free</b>（使用 c_allocator 与 C 保持一一对应），未使用 arena。差别在于 C 的 <code>float*</code> 离开 calloc 后不再携带长度，需要调用方记录；Zig 的 <code>[]f32</code> 切片包含长度，Debug 构建下越界访问触发 panic，ReleaseFast 不做检查。</div>
     </div>
 
     <div class="pane" id="p5">
@@ -414,7 +414,7 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
         }
     }
 }</pre></div>
-      <div class="codenote">这段几乎逐行对应——移植刻意保持同构。区别：Zig 的 <code>usize</code> 从类型上根除了 <code>(size_t)</code> 强转与 int 溢出风险（负索引、混号比较直接编译错误）；越界访问在 Debug 下是 panic 而不是未定义行为。</div>
+      <div class="codenote">这段代码与 C 基本逐行对应，移植保持同构。区别：Zig 的 <code>usize</code> 避免了 <code>(size_t)</code> 强转与 int 溢出风险（负索引、混合符号比较为编译错误）；越界访问在 Debug 下触发 panic，未定义行为不会静默发生。</div>
     </div>
   </div>
 </div></section>
@@ -426,13 +426,13 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
       <h3 style="color:var(--z-orange)">一条命令出两个二进制</h3>
       <div class="cmd"><span class="p">$</span> zig build --release=fast<br><span class="p">→</span> zig-out/bin/fp32-baseline.exe     <span class="p"># Zig 版</span><br><span class="p">→</span> zig-out/bin/microgpt-c.exe  <span class="p"># C 版（A/B 对照）</span></div>
       <div class="cmd"><span class="p">$</span> zig build --release=fast run   <span class="p"># 直接跑</span><br><span class="p">$</span> make CC=gcc run                <span class="p"># 老工具链对照</span></div>
-      <div class="cmd"><span class="p">$</span> zig build --release=fast tritnet <span class="p"># fp32 预训练 → 三值 QAT → 打包导出 全链路</span></div>
-      <p class="note" style="margin-bottom:0;">build.zig 里 C 版用 <code>addCSourceFile</code> 编入，flags 为 -Ofast -march=native -mavx2 -mfma —— 两个二进制由同一套 Zig/LLVM 工具链编译，最大化可比性。</p>
+      <div class="cmd"><span class="p">$</span> zig build --release=fast example-gpt <span class="p"># fp32 预训练 → 三元 QAT → 打包导出 全链路</span></div>
+      <p class="note" style="margin-bottom:0;">build.zig 用 <code>addCSourceFile</code> 编译 C 版，flags 为 -Ofast -mavx2 -mfma -Wall。两个二进制由同一套 Zig/LLVM 工具链编译，以保证可比性。</p>
     </div>
     <div class="card">
       <h3>仓库定位</h3>
-      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">项目现在是纯 Zig 主导（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">examples/gpt_names/fp32.zig</code> 为主 artifact），C 源码（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">examples/gpt_names/c/microgpt.c</code>）保留作为参考实现并随每次构建自动编译，用于 A/B 对比——本页正是这个对照机制的可视化快照。</p>
-      <p style="font-size:13.5px; color:var(--muted); margin-top:12px;">两个版本都：单文件、除 libc 外零依赖、同一算法（前向/反向/Adam/采样/权重打包/预计算 (token,pos) 表/融合采样器）。</p>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:8px;">项目主体使用 Zig（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">examples/gpt_names/fp32.zig</code> 为主要实现），C 源码（<code style="background:#0a0e15;padding:1px 5px;border-radius:4px;">examples/gpt_names/c/microgpt.c</code>）作为参考实现，随每次构建编译，用于对照。本页为该对照结果的页面记录。</p>
+      <p style="font-size:13.5px; color:var(--muted); margin-top:12px;">两个版本均为单文件、除 libc 外无外部依赖，使用同一算法（前向、反向、Adam、采样、权重打包、(token,pos) 表预计算、融合采样器）。</p>
     </div>
   </div>
 </div></section>
@@ -441,15 +441,15 @@ gpa.free(wte);   // 长度信息在切片里，越界 Debug 可捕获</pre></div
   <h2>结论 <span class="tag">VERDICT</span></h2>
   <div class="card">
     <table class="feat">
-      <tr><th></th><th>胜者</th><th>说明</th></tr>
-      <tr><td>纯推理吞吐</td><td><b style="color:var(--z-orange)">Zig +3.4%</b></td><td>@Vector 内核的 LLVM 调度更贴合 Zen4 的 FMA 流水</td></tr>
-      <tr><td>全流程耗时</td><td><b style="color:var(--z-orange)">Zig −25%</b></td><td>训练反传向量化后训练段 ~0.32s，对标量反传的 C（~0.70s）反超</td></tr>
-      <tr><td>数值行为</td><td><b style="color:var(--dim)">平</b></td><td>同种子下 avg loss 差 0.0005，样例首轮即分叉（舍入放大）</td></tr>
-      <tr><td>可维护性</td><td><b style="color:var(--z-orange)">Zig</b></td><td>1 套跨架构内核 vs 2 套手工镜像；无预处理层</td></tr>
-      <tr><td>逐架构雕刻空间</td><td><b style="color:var(--c-blue)">C</b></td><td>寄存器分配、lane 宽度可以手工抠到每周期</td></tr>
-      <tr><td>开发期安全网</td><td><b style="color:var(--z-orange)">Zig</b></td><td>Debug 越界 panic、显式转换意图、编译期维度检查</td></tr>
+      <tr><th></th><th>结果</th><th>说明</th></tr>
+      <tr><td>纯推理吞吐</td><td><b style="color:var(--z-orange)">Zig +3.4%</b></td><td>LLVM 为 @Vector 内核生成的调度更符合 Zen4 的 FMA 流水线</td></tr>
+      <tr><td>全流程耗时</td><td><b style="color:var(--z-orange)">Zig −25%</b></td><td>训练反传向量化后训练段约 0.32 s，低于按标量反传的 C（约 0.70 s）</td></tr>
+      <tr><td>数值行为</td><td><b style="color:var(--dim)">相同</b></td><td>同种子下 avg loss 相差 0.0005，首个样例即出现差异（舍入误差放大）</td></tr>
+      <tr><td>可维护性</td><td><b style="color:var(--z-orange)">Zig</b></td><td>1 套跨架构内核，C 为 2 套手工维护的内核；无预处理层</td></tr>
+      <tr><td>按架构调整的空间</td><td><b style="color:var(--c-blue)">C</b></td><td>寄存器分配与 lane 宽度可逐周期调整</td></tr>
+      <tr><td>开发期检查</td><td><b style="color:var(--z-orange)">Zig</b></td><td>Debug 下越界 panic、显式类型转换、编译期维度检查</td></tr>
     </table>
-    <div class="callout" style="margin-bottom:0;"><b>一句话：</b>极致手工调度的热内核，C 的 intrinsics 仍是天花板级工具；但当你要用<b>一份源码</b>喂饱 x86 和 ARM 两种宽度、还想要编译器和 Debug 模式的护网时，Zig 的 @Vector + 类型系统明显更划算——这次训练热路径同样向量化之后，Zig 版性能已全面反超，仓库留 C 做标尺，量出的正是这份进步。</div>
+    <div class="callout" style="margin-bottom:0;"><b>结论：</b>对需要精细调度的热路径内核，C 的 intrinsics 仍是可用的手段；若要用<b>一份源码</b>适配 x86 与 ARM 两种向量宽度，并保留编译期检查与 Debug 模式下的越界检查，Zig 的 @Vector 与类型系统可以减少维护量。本次训练路径向量化后，Zig 的推理吞吐与全流程耗时均高于 C 版。</div>
   </div>
 </div></section>
 
