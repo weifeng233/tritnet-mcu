@@ -19,7 +19,21 @@ import numpy as np
 import argparse
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
+
+# ============================================================================
+# Reproducible timestamps
+# ============================================================================
+# The header carries a generation timestamp, which makes two runs differ in exactly
+# one line and turns "byte-identical" into "identical except the first three lines".
+# SOURCE_DATE_EPOCH (https://reproducible-builds.org/specs/source-date-epoch/) pins
+# it, so a regenerated header can be compared against the committed one with diff(1).
+def header_timestamp() -> str:
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch is None:
+        return str(datetime.now())
+    # UTC, not local: a pinned build should not depend on the machine's time zone.\n    return str(datetime.fromtimestamp(int(epoch), tz=timezone.utc).replace(tzinfo=None))
+
 
 # ============================================================================
 # Import training config
@@ -161,7 +175,7 @@ def generate_c_header(checkpoint_path, output_path):
         # Header
         f.write("/*\n")
         f.write(f" * BitNet-GPT Model Weights\n")
-        f.write(f" * Generated: {datetime.now()}\n")
+        f.write(f" * Generated: {header_timestamp()}\n")
         f.write(f" * Architecture: {N_LAYER}L-{N_HEAD}H-{N_EMBD}E-{MLP_DIM}M\n")
         f.write(f" * Vocab size: {vocab_size}\n")
         f.write(f" * Ternary weights: {{-1, 0, +1}} (base-3 packed)\n")
