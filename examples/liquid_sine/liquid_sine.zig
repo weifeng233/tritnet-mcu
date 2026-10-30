@@ -1904,15 +1904,15 @@ pub fn main(init: std.process.Init) u8 {
     const m3 = build_wired(alloc, "WiredCfC + NCP(16 inter, 8 cmd, 1 motor)", &w3, .default);
 
     var ok = true;
-    const r1 = run_pipeline(init, alloc, m1, 1400, 1000, 5e-3, 1e-3, 16, 1500, "modeldata/ncps_cfc_packed.bin");
-    const r2 = run_pipeline(init, alloc, m2, 3000, 2000, 5e-3, 1e-3, 16, 20000, "modeldata/ncps_fc_packed.bin");
-    const r3 = run_pipeline(init, alloc, m3, 1500, 1500, 5e-3, 1e-3, 16, 20000, "modeldata/ncps_ncp_packed.bin");
-    const r4 = run_pipeline(init, alloc, m4, 1500, 1500, 3e-3, 1e-3, 16, 3000, "modeldata/ncps_ltc_packed.bin");
-    _ = export_valset(init.io, alloc, "modeldata/ncps_valset.bin") catch {
+    const r1 = run_pipeline(init, alloc, m1, 1400, 1000, 5e-3, 1e-3, 16, 1500, "examples/liquid_sine/modeldata/ncps_cfc_packed.bin");
+    const r2 = run_pipeline(init, alloc, m2, 3000, 2000, 5e-3, 1e-3, 16, 20000, "examples/liquid_sine/modeldata/ncps_fc_packed.bin");
+    const r3 = run_pipeline(init, alloc, m3, 1500, 1500, 5e-3, 1e-3, 16, 20000, "examples/liquid_sine/modeldata/ncps_ncp_packed.bin");
+    const r4 = run_pipeline(init, alloc, m4, 1500, 1500, 3e-3, 1e-3, 16, 3000, "examples/liquid_sine/modeldata/ncps_ltc_packed.bin");
+    _ = export_valset(init.io, alloc, "examples/liquid_sine/modeldata/ncps_valset.bin") catch {
         std.debug.print("failed to write valset\n", .{});
         return 1;
     };
-    _ = clib.printf("\nwrote modeldata/ncps_valset.bin (val split for the C engine)\n");
+    _ = clib.printf("\nwrote examples/liquid_sine/modeldata/ncps_valset.bin (val split for the C engine)\n");
 
     ok = r1.roundtrip_ok and r2.roundtrip_ok and r3.roundtrip_ok and r4.roundtrip_ok;
 

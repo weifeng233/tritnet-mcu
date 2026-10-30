@@ -106,7 +106,7 @@ pub fn build(b: *std.Build) void {
     cnn_step.dependOn(&cnn_cmd.step);
 
     const ncps_mod = b.createModule(.{
-        .root_source_file = b.path("examples/liquid_sine.zig"),
+        .root_source_file = b.path("examples/liquid_sine/liquid_sine.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -198,7 +198,7 @@ pub fn build(b: *std.Build) void {
     const run_cnn_tests = b.addRunArtifact(cnn_tests);
 
     const ncps_test_mod = b.createModule(.{
-        .root_source_file = b.path("examples/liquid_sine.zig"),
+        .root_source_file = b.path("examples/liquid_sine/liquid_sine.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
