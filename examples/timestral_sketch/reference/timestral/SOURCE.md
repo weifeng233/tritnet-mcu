@@ -12,5 +12,5 @@ reference does not need were not copied. Changes, if any are ever made, must be
 marked as Apache-2.0 §4(b) requires.
 
 This tree is never compiled or linked into the Zig engine, and it is excluded from
-GitHub's language statistics. `python/timestral_fixtures.py` imports it to dump
-reference tensors; `deploy/app.py` imports it for the fp32 backend.
+GitHub's language statistics. `examples/timestral_sketch/python/timestral_fixtures.py` imports it to dump
+reference tensors; `examples/timestral_sketch/deploy/app.py` imports it for the fp32 backend.

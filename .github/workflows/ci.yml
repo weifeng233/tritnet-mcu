@@ -34,7 +34,7 @@ jobs:
       - name: format
         run: zig fmt --check build.zig src examples
 
-      # Without modeldata/timestral-5m the three PyTorch-parity tests skip and
+      # Without the Timestral checkpoint the three PyTorch-parity tests skip and
       # say so; the other 46 must pass on all three platforms. The parity job
       # below is the one that refuses to skip.
       - name: unit tests
@@ -63,7 +63,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install "huggingface_hub>=0.23"
-          python -c "from huggingface_hub import snapshot_download; snapshot_download('mistralai/Timestral-5M', local_dir='modeldata/timestral-5m', allow_patterns=['*.json','*.safetensors','LICENSE'])"
+          python -c "from huggingface_hub import snapshot_download; snapshot_download('mistralai/Timestral-5M', local_dir='examples/timestral_sketch/modeldata/timestral-5m', allow_patterns=['*.json','*.safetensors','LICENSE'])"
 
       # -Drequire-parity=true turns a missing checkpoint into a failure. Without
       # it this job would go green having tested nothing, which is the failure
@@ -112,4 +112,4 @@ jobs:
           python -m pip install --upgrade pip
           pip install "fastapi>=0.110" "uvicorn>=0.29" "pydantic>=2" "numpy>=1.24"
           test ! -e zig-out/bin/timestral-cli.exe   # no .exe on Linux
-          python deploy/app.py --check
+          python examples/timestral_sketch/deploy/app.py --check

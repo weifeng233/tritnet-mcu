@@ -17,18 +17,17 @@ __pycache__/
 .commandcode/
 # python: the locked environment is created by `uv sync`, never committed
 .venv/
-python/**/*.pyc
 # Timestral-5M: downloaded checkpoints and QAT outputs (use make fetch-timestral / timestral-qat)
-modeldata/timestral-5m/
-modeldata/timestral_qat*/
+examples/timestral_sketch/modeldata/timestral-5m/
+examples/timestral_sketch/modeldata/timestral_qat*/
 # generated Timestral artifacts: rebuild with `make quantize-timestral` (or
 # `make quantize-timestral-ptq`). They are published as release assets instead
 # of living in git history: https://github.com/weifeng233/tritnet-mcu/releases
-modeldata/timestral_packed.bin
-modeldata/timestral_ptq.bin
-modeldata/timestral_forecast_*.bin
-deploy/server.log
-deploy/server.err
+examples/timestral_sketch/modeldata/timestral_packed.bin
+examples/timestral_sketch/modeldata/timestral_ptq.bin
+examples/timestral_sketch/modeldata/timestral_forecast_*.bin
+examples/timestral_sketch/deploy/server.log
+examples/timestral_sketch/deploy/server.err
 # private notes: kept on disk, never published
 #   docs/adr/      architecture decision records (why each big choice was made)
 #   docs/research/ project review, standardization plan, resume material, verification rounds

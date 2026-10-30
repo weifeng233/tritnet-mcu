@@ -4,8 +4,8 @@ Reads the stroke corpus written by `timestral-cli eval --dump` plus two raw fore
 (`timestral-cli forecast --out ...`, one per backend), and draws the context, the truth,
 and each model's median with its 5-95% and 25-75% bands.
 
-    python python/timestral_figure.py modeldata/timestral_forecast_fp32.bin \
-        modeldata/timestral_forecast_ternary.bin docs/timestral-sketch.png
+    python examples/timestral_sketch/python/timestral_figure.py examples/timestral_sketch/modeldata/timestral_forecast_fp32.bin \
+        examples/timestral_sketch/modeldata/timestral_forecast_ternary.bin docs/timestral-sketch.png
 """
 
 from __future__ import annotations
@@ -21,7 +21,8 @@ import numpy as np
 
 from timestral_metrics import summarize
 
-ROOT = Path(__file__).resolve().parents[1]
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
 CTX, H = 256, 96
 LEVELS = np.asarray([0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
                      0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99])
@@ -40,9 +41,9 @@ def band(ax, x, q, color, alpha, label=None):
 
 
 def main() -> None:
-    corpus_path = ROOT / "modeldata" / "timestral_strokes.bin"
-    fp32_path = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "modeldata" / "timestral_forecast_fp32.bin"
-    tern_path = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "modeldata" / "timestral_forecast_ternary.bin"
+    corpus_path = EX / "modeldata" / "timestral_strokes.bin"
+    fp32_path = Path(sys.argv[1]) if len(sys.argv) > 1 else EX / "modeldata" / "timestral_forecast_fp32.bin"
+    tern_path = Path(sys.argv[2]) if len(sys.argv) > 2 else EX / "modeldata" / "timestral_forecast_ternary.bin"
     out = Path(sys.argv[3]) if len(sys.argv) > 3 else ROOT / "docs" / "timestral-sketch.png"
 
     corpus = np.fromfile(corpus_path, dtype=np.float32).reshape(-1, CTX + H)

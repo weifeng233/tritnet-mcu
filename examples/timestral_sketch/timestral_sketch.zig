@@ -8,9 +8,9 @@
 //!
 //! The subcommands are also reachable directly:
 //!
-//!     timestral-cli quantize modeldata/timestral-5m/model.safetensors modeldata/timestral_packed.bin
-//!     timestral-cli eval modeldata/timestral_packed.bin --n 24 --h 96 --ctx 256
-//!     timestral-cli serve modeldata/timestral_packed.bin
+//!     timestral-cli quantize examples/timestral_sketch/modeldata/timestral-5m/model.safetensors examples/timestral_sketch/modeldata/timestral_packed.bin
+//!     timestral-cli eval examples/timestral_sketch/modeldata/timestral_packed.bin --n 24 --h 96 --ctx 256
+//!     timestral-cli serve examples/timestral_sketch/modeldata/timestral_packed.bin
 //!
 //! `serve` reads one `{"y": [...], "h": 96}` per line on stdin and answers
 //! `{"q": [[q01..q99] per step], "ms": ..., "model": ...}` on stdout: one process, one
@@ -34,9 +34,9 @@ const clib = @cImport({
     @cInclude("stdio.h");
 });
 
-pub const SAFETENSORS = "modeldata/timestral-5m/model.safetensors";
-pub const ARTIFACT = "modeldata/timestral_packed.bin";
-pub const FIXTURE = "modeldata/fixtures/timestral_fixture.bin";
+pub const SAFETENSORS = "examples/timestral_sketch/modeldata/timestral-5m/model.safetensors";
+pub const ARTIFACT = "examples/timestral_sketch/modeldata/timestral_packed.bin";
+pub const FIXTURE = "examples/timestral_sketch/modeldata/fixtures/timestral_fixture.bin";
 
 fn say(comptime fmt: []const u8, args: anytype) void {
     var buf: [2048]u8 = undefined;
@@ -462,10 +462,10 @@ pub fn main(init: std.process.Init) u8 {
     }
     if (std.mem.eql(u8, cmd, "forecast")) {
         const model_path = args.next() orelse ARTIFACT;
-        const corpus_path = args.next() orelse "modeldata/timestral_strokes.bin";
+        const corpus_path = args.next() orelse "examples/timestral_sketch/modeldata/timestral_strokes.bin";
         var ctx: usize = 256;
         var h: usize = 96;
-        var out_path: []const u8 = "modeldata/timestral_forecast.bin";
+        var out_path: []const u8 = "examples/timestral_sketch/modeldata/timestral_forecast.bin";
         while (args.next()) |a| {
             if (std.mem.eql(u8, a, "--ctx")) {
                 ctx = std.fmt.parseInt(usize, args.next() orelse "256", 10) catch 256;

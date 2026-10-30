@@ -24,14 +24,14 @@ make fetch-timestral
 zig build --release=fast
 
 # 3. the ternary artifact from the released checkpoint
-./zig-out/bin/timestral-cli quantize modeldata/timestral-5m/model.safetensors modeldata/timestral_packed.bin
+./zig-out/bin/timestral-cli quantize examples/timestral_sketch/modeldata/timestral-5m/model.safetensors examples/timestral_sketch/modeldata/timestral_packed.bin
 
 # 4. serve
-python deploy/app.py                  # http://127.0.0.1:8000
-python deploy/app.py --backends ternary   # no PyTorch in the loop at all
+python examples/timestral_sketch/deploy/app.py                  # http://127.0.0.1:8000
+python examples/timestral_sketch/deploy/app.py --backends ternary   # no PyTorch in the loop at all
 ```
 
-`python deploy/app.py --help` lists the flags; `TIMESTRAL_WORKER`, `TIMESTRAL_ARTIFACT`
+`python examples/timestral_sketch/deploy/app.py --help` lists the flags; `TIMESTRAL_WORKER`, `TIMESTRAL_ARTIFACT`
 and `TIMESTRAL_FP32` override the paths.
 
 ## How a request flows
@@ -40,7 +40,7 @@ and `TIMESTRAL_FP32` override the paths.
 browser (canvas)
   │  POST /api/forecast {"y": [...], "h": 96, "backend": "both"}
   ▼
-deploy/app.py  (FastAPI)
+examples/timestral_sketch/deploy/app.py  (FastAPI)
   ├─ fp32    → timestral.TimestralForecaster.forecast       (PyTorch, in-process)
   └─ ternary → timestral-cli serve  (subprocess, one line of JSON per request)
                  └─ artifact.bin → trits → decodeBlock → refine frame → clampsym
@@ -72,5 +72,5 @@ answers (the response carries an `errors` object).
   time steps, not pixel positions), throttles live requests to ~120 ms, and supersedes
   in-flight ones with an `AbortController`.
 - `h` is one decode block of patches: 96 and 192 steps here, well inside the model's 1024.
-- The fp32 backend needs `torch` and the reference package in `reference/timestral`
+- The fp32 backend needs `torch` and the reference package in `examples/timestral_sketch/reference/timestral`
   (`sys.path` is set up by `app.py`); the ternary backend needs neither.

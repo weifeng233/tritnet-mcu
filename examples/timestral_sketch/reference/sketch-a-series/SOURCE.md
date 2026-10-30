@@ -5,7 +5,7 @@
 
 License: the Space's own license as published upstream (no separate license file
 was shipped with the Space download). These files are kept as the UX reference
-this repository's app mirrors; `deploy/app.py` and `web/sketch-a-series.html` are
+this repository's app mirrors; `examples/timestral_sketch/deploy/app.py` and `examples/timestral_sketch/web/sketch-a-series.html` are
 independent implementations and share no code with them.
 
 Nothing here is built into the Zig pipeline, and the tree is excluded from

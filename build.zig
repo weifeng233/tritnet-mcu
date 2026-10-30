@@ -127,7 +127,7 @@ pub fn build(b: *std.Build) void {
     // sketch-a-series app, then quantize it with this framework and re-run the
     // same app against the ternary artifact.
     const ts_lib = b.createModule(.{
-        .root_source_file = b.path("src/timestral.zig"),
+        .root_source_file = b.path("examples/timestral_sketch/timestral.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -135,7 +135,7 @@ pub fn build(b: *std.Build) void {
     ts_lib.addImport("framework", fw_mod);
     if (target.result.os.tag != .windows) ts_lib.linkSystemLibrary("m", .{});
     const ts_mod = b.createModule(.{
-        .root_source_file = b.path("examples/timestral_sketch.zig"),
+        .root_source_file = b.path("examples/timestral_sketch/timestral_sketch.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -150,22 +150,22 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(ts_exe);
 
     const ts_quant_cmd = b.addRunArtifact(ts_exe);
-    ts_quant_cmd.addArgs(&.{ "quantize", "modeldata/timestral-5m/model.safetensors", "modeldata/timestral_packed.bin" });
+    ts_quant_cmd.addArgs(&.{ "quantize", "examples/timestral_sketch/modeldata/timestral-5m/model.safetensors", "examples/timestral_sketch/modeldata/timestral_packed.bin" });
     const ts_quant_step = b.step("timestral-quantize", "Quantize Timestral-5M to the framework's ternary artifact");
     ts_quant_step.dependOn(&ts_quant_cmd.step);
 
     const ts_eval_cmd = b.addRunArtifact(ts_exe);
-    ts_eval_cmd.addArgs(&.{ "eval", "modeldata/timestral_packed.bin", "--json", "modeldata/timestral_eval_ternary.json" });
+    ts_eval_cmd.addArgs(&.{ "eval", "examples/timestral_sketch/modeldata/timestral_packed.bin", "--json", "examples/timestral_sketch/modeldata/timestral_eval_ternary.json" });
     const ts_eval_step = b.step("timestral-eval", "Score the ternary Timestral artifact (pinball, MASE, latency)");
     ts_eval_step.dependOn(&ts_eval_cmd.step);
 
     const ts_fp32_cmd = b.addRunArtifact(ts_exe);
-    ts_fp32_cmd.addArgs(&.{ "eval", "modeldata/timestral-5m/model.safetensors", "--json", "modeldata/timestral_eval_fp32.json" });
+    ts_fp32_cmd.addArgs(&.{ "eval", "examples/timestral_sketch/modeldata/timestral-5m/model.safetensors", "--json", "examples/timestral_sketch/modeldata/timestral_eval_fp32.json" });
     const ts_fp32_step = b.step("timestral-eval-fp32", "Score the fp32 Timestral checkpoint with the same engine");
     ts_fp32_step.dependOn(&ts_fp32_cmd.step);
 
     const ts_serve_cmd = b.addRunArtifact(ts_exe);
-    ts_serve_cmd.addArgs(&.{ "serve", "modeldata/timestral_packed.bin" });
+    ts_serve_cmd.addArgs(&.{ "serve", "examples/timestral_sketch/modeldata/timestral_packed.bin" });
     const ts_serve_step = b.step("timestral-serve", "Run the ternary forecast worker (JSON lines on stdin/stdout)");
     ts_serve_step.dependOn(&ts_serve_cmd.step);
 
@@ -208,7 +208,7 @@ pub fn build(b: *std.Build) void {
     const run_ncps_tests = b.addRunArtifact(ncps_tests);
 
     const ts_test_mod = b.createModule(.{
-        .root_source_file = b.path("examples/timestral_sketch.zig"),
+        .root_source_file = b.path("examples/timestral_sketch/timestral_sketch.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,

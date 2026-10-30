@@ -6,7 +6,7 @@ app requests), and compares against the Zig engine's batch output. It also recom
 metrics in NumPy, so the numbers printed by the two engines can be checked against a third
 implementation.
 
-    python python/timestral_parity.py
+    python examples/timestral_sketch/python/timestral_parity.py
 """
 
 from __future__ import annotations
@@ -17,15 +17,16 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reference"))
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
+sys.path.insert(0, str(EX / "reference"))
 
 from timestral import TimestralForecaster  # noqa: E402
 from timestral_metrics import summarize  # noqa: E402
 
-MODEL_DIR = ROOT / "modeldata" / "timestral-5m"
-CORPUS = ROOT / "modeldata" / "timestral_strokes.bin"
-ZIG_FP32 = ROOT / "modeldata" / "timestral_forecast_fp32.bin"
+MODEL_DIR = EX / "modeldata" / "timestral-5m"
+CORPUS = EX / "modeldata" / "timestral_strokes.bin"
+ZIG_FP32 = EX / "modeldata" / "timestral_forecast_fp32.bin"
 CTX, H = 256, 96
 
 

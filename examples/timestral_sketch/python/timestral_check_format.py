@@ -6,7 +6,7 @@ and the writer disagree, this script desynchronizes and the byte count at the en
 wrong -- which is exactly how the "vector records carry a kind byte" error was found
 (the doc said `u8 0 | u32 n | f32 data`, the writer has never emitted that byte).
 
-    python python/timestral_check_format.py modeldata/timestral_packed.bin
+    python examples/timestral_sketch/python/timestral_check_format.py examples/timestral_sketch/modeldata/timestral_packed.bin
 
 Exits 0 when the file is consumed exactly, with a summary of what it contained.
 """
@@ -137,7 +137,7 @@ def parse(path: Path) -> None:
 def main() -> int:
     args = sys.argv[1:]
     if not args:
-        args = ["modeldata/timestral_packed.bin"]
+        args = ["examples/timestral_sketch/modeldata/timestral_packed.bin"]
     for a in args:
         p = Path(a)
         if not p.exists():

@@ -4,7 +4,7 @@ For each group of Linear weights (patch embedding, attention, gated projections,
 MLP, quantile head) ternarize that group alone and measure the pinball loss on the same
 fixed strokes, so the quantization plan can keep the delicate layers in fp32.
 
-    python python/timestral_sensitivity.py
+    python examples/timestral_sketch/python/timestral_sensitivity.py
 """
 
 from __future__ import annotations
@@ -16,12 +16,13 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reference"))
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
+sys.path.insert(0, str(EX / "reference"))
 
 from timestral import TimestralForecaster  # noqa: E402
 
-MODEL_DIR = ROOT / "modeldata" / "timestral-5m"
+MODEL_DIR = EX / "modeldata" / "timestral-5m"
 CTX, H, N = 256, 96, 24
 
 

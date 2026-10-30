@@ -38,18 +38,19 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reference"))
+EX = Path(__file__).resolve().parents[1]        # examples/timestral_sketch
+ROOT = EX.parents[1]                           # repository root
+sys.path.insert(0, str(EX / "reference"))
 
-WEB = ROOT / "web" / "sketch-a-series.html"
+WEB = EX / "web" / "sketch-a-series.html"
 # The worker is built by `zig build`, which appends .exe on Windows only. Hardcoding
 # the suffix made `make sketch` fail on Linux and macOS with "worker not found".
 WORKER_NAME = "timestral-cli.exe" if os.name == "nt" else "timestral-cli"
 WORKER = Path(os.environ.get("TIMESTRAL_WORKER", ROOT / "zig-out" / "bin" / WORKER_NAME))
-ARTIFACT = Path(os.environ.get("TIMESTRAL_ARTIFACT", ROOT / "modeldata" / "timestral_packed.bin"))
-FP32_DIR = Path(os.environ.get("TIMESTRAL_FP32", ROOT / "modeldata" / "timestral-5m"))
-EVAL_FP32 = ROOT / "modeldata" / "timestral_eval_fp32.json"
-EVAL_TERNARY = ROOT / "modeldata" / "timestral_eval_ternary.json"
+ARTIFACT = Path(os.environ.get("TIMESTRAL_ARTIFACT", EX / "modeldata" / "timestral_packed.bin"))
+FP32_DIR = Path(os.environ.get("TIMESTRAL_FP32", EX / "modeldata" / "timestral-5m"))
+EVAL_FP32 = EX / "modeldata" / "timestral_eval_fp32.json"
+EVAL_TERNARY = EX / "modeldata" / "timestral_eval_ternary.json"
 
 H_CHOICES = (96, 192)
 LEVELS = [round(0.01 + 0.0, 2)]  # replaced at startup from the checkpoint config

@@ -86,16 +86,16 @@ deploy-check: cnn-c ncps-check
 # checkpoint (21 MB) and refreshes the reference fixtures; `timestral` quantizes
 # and scores it; `sketch` serves the drawing app on http://127.0.0.1:8000.
 TIMESTRAL_CLI := zig-out/bin/timestral-cli
-TIMESTRAL_SAFE := modeldata/timestral-5m/model.safetensors
-TIMESTRAL_QAT := modeldata/timestral_qat/model.safetensors
-TIMESTRAL_PACKED := modeldata/timestral_packed.bin
-TIMESTRAL_PTQ := modeldata/timestral_ptq.bin
+TIMESTRAL_SAFE := examples/timestral_sketch/modeldata/timestral-5m/model.safetensors
+TIMESTRAL_QAT := examples/timestral_sketch/modeldata/timestral_qat/model.safetensors
+TIMESTRAL_PACKED := examples/timestral_sketch/modeldata/timestral_packed.bin
+TIMESTRAL_PTQ := examples/timestral_sketch/modeldata/timestral_ptq.bin
 
 fetch-timestral:
-	python -c "from huggingface_hub import snapshot_download; snapshot_download('mistralai/Timestral-5M', local_dir='modeldata/timestral-5m', allow_patterns=['*.json','*.safetensors','LICENSE'])"
-	python python/timestral_fixtures.py
+	python -c "from huggingface_hub import snapshot_download; snapshot_download('mistralai/Timestral-5M', local_dir='examples/timestral_sketch/modeldata/timestral-5m', allow_patterns=['*.json','*.safetensors','LICENSE'])"
+	python examples/timestral_sketch/python/timestral_fixtures.py
 
-$(TIMESTRAL_CLI): $(wildcard src/timestral/*.zig src/timestral.zig examples/timestral_sketch.zig)
+$(TIMESTRAL_CLI): $(wildcard examples/timestral_sketch/timestral/*.zig examples/timestral_sketch/timestral.zig examples/timestral_sketch/timestral_sketch.zig)
 	zig build --release=fast
 
 # The deployed artifact: the QAT latents, ternarized, packed, width-calibrated.
@@ -107,21 +107,21 @@ quantize-timestral-ptq: $(TIMESTRAL_CLI)
 	$(TIMESTRAL_CLI) quantize $(TIMESTRAL_SAFE) $(TIMESTRAL_PTQ) --no-calibrate
 
 timestral-eval: $(TIMESTRAL_CLI)
-	$(TIMESTRAL_CLI) eval $(TIMESTRAL_SAFE) --dump modeldata/timestral_strokes.bin --json modeldata/timestral_eval_fp32.json
-	$(TIMESTRAL_CLI) eval $(TIMESTRAL_PTQ) --json modeldata/timestral_eval_ptq.json
-	$(TIMESTRAL_CLI) eval $(TIMESTRAL_PACKED) --json modeldata/timestral_eval_ternary.json
-	$(TIMESTRAL_CLI) forecast $(TIMESTRAL_SAFE) modeldata/timestral_strokes.bin --out modeldata/timestral_forecast_fp32.bin
-	$(TIMESTRAL_CLI) forecast $(TIMESTRAL_PACKED) modeldata/timestral_strokes.bin --out modeldata/timestral_forecast_ternary.bin
+	$(TIMESTRAL_CLI) eval $(TIMESTRAL_SAFE) --dump examples/timestral_sketch/modeldata/timestral_strokes.bin --json examples/timestral_sketch/modeldata/timestral_eval_fp32.json
+	$(TIMESTRAL_CLI) eval $(TIMESTRAL_PTQ) --json examples/timestral_sketch/modeldata/timestral_eval_ptq.json
+	$(TIMESTRAL_CLI) eval $(TIMESTRAL_PACKED) --json examples/timestral_sketch/modeldata/timestral_eval_ternary.json
+	$(TIMESTRAL_CLI) forecast $(TIMESTRAL_SAFE) examples/timestral_sketch/modeldata/timestral_strokes.bin --out examples/timestral_sketch/modeldata/timestral_forecast_fp32.bin
+	$(TIMESTRAL_CLI) forecast $(TIMESTRAL_PACKED) examples/timestral_sketch/modeldata/timestral_strokes.bin --out examples/timestral_sketch/modeldata/timestral_forecast_ternary.bin
 
 timestral-check: timestral-eval
-	python python/timestral_parity.py
-	python python/timestral_check_format.py $(TIMESTRAL_PACKED) $(TIMESTRAL_PTQ)
+	python examples/timestral_sketch/python/timestral_parity.py
+	python examples/timestral_sketch/python/timestral_check_format.py $(TIMESTRAL_PACKED) $(TIMESTRAL_PTQ)
 
 timestral-qat:
-	python python/timestral_qat.py --steps 2500 --batch 32 --lr 1.5e-4
+	python examples/timestral_sketch/python/timestral_qat.py --steps 2500 --batch 32 --lr 1.5e-4
 
 sketch: $(TIMESTRAL_CLI)
-	python deploy/app.py --port 8000
+	python examples/timestral_sketch/deploy/app.py --port 8000
 
 clean:
 	rm -rf $(BIN) $(CNN_BIN) $(NCPS_BIN) zig-out .zig-cache *.o *.dSYM

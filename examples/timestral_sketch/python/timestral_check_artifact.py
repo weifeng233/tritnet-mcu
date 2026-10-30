@@ -6,7 +6,7 @@ fp32 norm/bias/query tensors. This script parses it, rebuilds the deployed fp32 
 Zig engine scored. If the two agree, the packer, the unpacker and the forward pass are all
 consistent; if they disagree, the difference is in one of those, not in the training.
 
-    python python/timestral_check_artifact.py modeldata/timestral_packed.bin
+    python examples/timestral_sketch/python/timestral_check_artifact.py examples/timestral_sketch/modeldata/timestral_packed.bin
 """
 
 from __future__ import annotations
@@ -18,8 +18,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reference"))
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
+sys.path.insert(0, str(EX / "reference"))
 
 from timestral import TimestralForecaster  # noqa: E402
 from timestral.config import TimestralConfig  # noqa: E402
@@ -160,9 +161,9 @@ def build_model(cfg: dict, records: list) -> TimestralModel:
 
 
 def main() -> None:
-    art = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "modeldata" / "timestral_packed.bin"
-    zig_path = ROOT / "modeldata" / "timestral_forecast_ternary.bin"
-    corpus = np.fromfile(ROOT / "modeldata" / "timestral_strokes.bin", dtype=np.float32).reshape(-1, CTX + H)
+    art = Path(sys.argv[1]) if len(sys.argv) > 1 else EX / "modeldata" / "timestral_packed.bin"
+    zig_path = EX / "modeldata" / "timestral_forecast_ternary.bin"
+    corpus = np.fromfile(EX / "modeldata" / "timestral_strokes.bin", dtype=np.float32).reshape(-1, CTX + H)
     ctx, truth = corpus[:, :CTX], corpus[:, CTX:]
 
     cfg, records = read_artifact(art)

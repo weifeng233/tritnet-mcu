@@ -4,7 +4,7 @@ Runs the reference (PyTorch) forecaster on a fixed set of drawn-looking strokes 
 reports pinball loss / MASE for several weight-quantization variants. Used to pick the
 quantizer the Zig exporter implements.
 
-    python python/timestral_probe.py
+    python examples/timestral_sketch/python/timestral_probe.py
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reference"))
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
+sys.path.insert(0, str(EX / "reference"))
 
 from timestral import TimestralForecaster  # noqa: E402
 
-MODEL_DIR = ROOT / "modeldata" / "timestral-5m"
+MODEL_DIR = EX / "modeldata" / "timestral-5m"
 CTX = 256
 H = 96
 N = 24

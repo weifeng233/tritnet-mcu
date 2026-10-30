@@ -41,7 +41,7 @@ dev = [
     "ruff>=0.6",
 ]
 
-# The scripts are run in place (`python python/timestral_qat.py`), not installed as a
+# The scripts are run in place (`python examples/timestral_sketch/python/timestral_qat.py`), not installed as a
 # package: there is no importable module tree to build, so uv must not try to build one.
 [tool.uv]
 package = false

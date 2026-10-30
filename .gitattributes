@@ -14,7 +14,7 @@
 # Vendored upstream trees and checked-in fixtures are not this repository's
 # source. Excluding them keeps GitHub's language bar honest (Zig, not C/Python)
 # and keeps diffs of vendored code out of the review surface.
-reference/**            linguist-vendored
-reference/**            linguist-documentation
-modeldata/fixtures/**   linguist-vendored
+examples/timestral_sketch/reference/**            linguist-vendored
+examples/timestral_sketch/reference/**            linguist-documentation
+examples/timestral_sketch/modeldata/fixtures/**   linguist-vendored
 examples/gpt_names/c/microgpt.c  linguist-vendored

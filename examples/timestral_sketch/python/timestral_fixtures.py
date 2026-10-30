@@ -12,7 +12,7 @@ Three cases are covered:
     forecast   the forecaster path on h=96 (refine + cap, no mirror)
     sym        the same with symmetric averaging, i.e. what the sketch app requests
 
-    python python/timestral_fixtures.py
+    python examples/timestral_sketch/python/timestral_fixtures.py
 """
 
 from __future__ import annotations
@@ -25,8 +25,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reference"))
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
+sys.path.insert(0, str(EX / "reference"))
 
 from timestral import TimestralForecaster  # noqa: E402
 from timestral.model import TimestralModel  # noqa: E402
@@ -39,8 +40,8 @@ from timestral.masks import (  # noqa: E402
 )
 from timestral.scaler import apply_affine_asinh_masked, causal_patch_loc_scale  # noqa: E402
 
-MODEL_DIR = ROOT / "modeldata" / "timestral-5m"
-OUT = ROOT / "modeldata" / "fixtures" / "timestral_fixture.bin"
+MODEL_DIR = EX / "modeldata" / "timestral-5m"
+OUT = EX / "modeldata" / "fixtures" / "timestral_fixture.bin"
 
 CTX = 256  # 8 patches
 H = 96

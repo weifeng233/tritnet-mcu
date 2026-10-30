@@ -10,17 +10,18 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 from timestral_metrics import KIND_NAMES, by_kind  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
 LEVELS = np.asarray([0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
                      0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.99], dtype=np.float32)
 
 
 def main() -> None:
-    corpus = np.fromfile(ROOT / "modeldata" / "timestral_strokes.bin", dtype=np.float32).reshape(-1, 352)
+    corpus = np.fromfile(EX / "modeldata" / "timestral_strokes.bin", dtype=np.float32).reshape(-1, 352)
     ctx, truth = corpus[:, :256], corpus[:, 256:384]
     names = [k for k in ("fp32", "ternary")
-             if (ROOT / "modeldata" / f"timestral_forecast_{k}.bin").exists()]
-    qs = {k: np.fromfile(ROOT / "modeldata" / f"timestral_forecast_{k}.bin", dtype=np.float32).reshape(-1, 96, 21)
+             if (EX / "modeldata" / f"timestral_forecast_{k}.bin").exists()]
+    qs = {k: np.fromfile(EX / "modeldata" / f"timestral_forecast_{k}.bin", dtype=np.float32).reshape(-1, 96, 21)
           for k in names}
     tables = {k: by_kind(qs[k], truth, ctx, LEVELS) for k in names}
     print("| family | strokes | fp32 pinball | ternary pinball | ratio |")

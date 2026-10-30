@@ -1,7 +1,7 @@
 """Quantization-aware training for Timestral-5M with this project's ternary quantizer.
 
 Naive post-training ternarization costs the model most of its accuracy (see
-`python/timestral_sensitivity.py`): absmean row scales at 1.6 bits per weight are far from
+`examples/timestral_sketch/python/timestral_sensitivity.py`): absmean row scales at 1.6 bits per weight are far from
 what a pretrained fp32 transformer expects. This script fine-tunes the released checkpoint
 with the framework's exact quantizer in the forward pass:
 
@@ -17,7 +17,7 @@ quantiles on a corpus of drawn-looking strokes — the same distribution the app
 The fine-tuned checkpoint is saved as `model.safetensors` + `config.json` in the output
 directory; `timestral-cli quantize` then produces the deployable artifact from it.
 
-    python python/timestral_qat.py --steps 1200 --batch 32
+    python examples/timestral_sketch/python/timestral_qat.py --steps 1200 --batch 32
 """
 
 from __future__ import annotations
@@ -34,13 +34,14 @@ import numpy as np
 import torch
 from torch import nn
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reference"))
+EX = Path(__file__).resolve().parents[1]   # examples/timestral_sketch
+ROOT = EX.parents[1]                          # repository root
+sys.path.insert(0, str(EX / "reference"))
 
 from timestral import TimestralForecaster  # noqa: E402
 
-MODEL_DIR = ROOT / "modeldata" / "timestral-5m"
-OUT_DIR = ROOT / "modeldata" / "timestral_qat"
+MODEL_DIR = EX / "modeldata" / "timestral-5m"
+OUT_DIR = EX / "modeldata" / "timestral_qat"
 CTX = 256
 
 
