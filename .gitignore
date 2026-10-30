@@ -29,5 +29,10 @@ modeldata/timestral_ptq.bin
 modeldata/timestral_forecast_*.bin
 deploy/server.log
 deploy/server.err
-# personal notes: project review, standardization plan, resume material
+# private notes: kept on disk, never published
+#   docs/adr/      architecture decision records (why each big choice was made)
+#   docs/research/ project review, standardization plan, resume material, verification rounds
+#   docs/TIMESTRAL-TRADEOFFS.zh-CN.md  the cost ledger behind docs/TIMESTRAL.md
+docs/adr/
 docs/research/
+docs/TIMESTRAL-TRADEOFFS.zh-CN.md

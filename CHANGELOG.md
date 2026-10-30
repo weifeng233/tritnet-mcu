@@ -4,6 +4,35 @@ All notable changes to this repository. Numbers are the ones the committed artif
 and eval records report; if a figure here disagrees with a document, the document and
 this file are both wrong and should be fixed together.
 
+## Unreleased — documentation cleanup
+
+### Changed
+
+- **The decision records and the research notes are no longer published.** `docs/adr/`
+  and `docs/research/` are listed in `.gitignore` and stay on disk as private notes. The
+  reasoning they carried is now summarized, conclusions only, in the README's *Design
+  decisions* section.
+- **`docs/TIMESTRAL.md` no longer overstates what quantization cost.** The QAT latents
+  score **0.0946** without quantization, not 0.0769 (+33 % over the released checkpoint,
+  not ~8 %), and the page's 31–44 → 16–22 ms gap is PyTorch against the Zig engine: the
+  same engine is 3–8 % *slower* on trits, so 1.77 bits buys compression, not speed. The
+  note that measured both is now private, so both corrections live in
+  `docs/TIMESTRAL.md` itself.
+- **The README's example-2 block quotes the 2026-10-30 run** — 42.93 µs per inference
+  (1262.6 M MACs/s) against 45.67 µs for fp32 weights on the same host — instead of an
+  older 41.1 µs figure that no committed record produced.
+
+### Removed
+
+- `docs/OWNERSHIP.md` — the file-level ownership map; licensing provenance now lives
+  only in `THIRD_PARTY.md`.
+- `docs/cnn_run.txt` — a captured CNN run log; `web/tinyml.html` now records its own
+  capture instead of pointing at it.
+- `docs/PERFORMANCE.zh-CN.md` — a translation of `docs/PERFORMANCE.md`, maintained
+  twice.
+- `.github/release-notes-v0.2.0.md` — a copy of the release body GitHub already holds.
+- `docs/app-screenshot.png` — a screenshot nothing referenced.
+
 ## v0.2.0 — 2026-10-30
 
 The standardization release: the repository is now published, licensed correctly, and

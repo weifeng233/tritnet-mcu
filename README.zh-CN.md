@@ -78,13 +78,31 @@ uv sync --extra serve                # 绘图服务
 | 文档 | 回答什么问题 |
 | --- | --- |
 | [`docs/ARTIFACT-FORMAT.md`](docs/ARTIFACT-FORMAT.md) | 五种二进制格式逐字段说明，以及三元编解码的黄金测试向量 |
-| [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md) | 哪些是我写的、哪些是移植、哪些是内嵌 |
 | [`docs/TIMESTRAL.md`](docs/TIMESTRAL.md) | 1.6 bit/权重在 Timestral-5M 上到底付出多少代价（实测） |
-| [`docs/TIMESTRAL-TRADEOFFS.zh-CN.md`](docs/TIMESTRAL-TRADEOFFS.zh-CN.md) | 上述取舍的中文版本 |
-| [`docs/adr/`](docs/adr/README.md) | 为什么用 Zig、为什么 5 trits、为什么双实现、为什么 absmean、为什么保留 fp32 |
-| [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | 吞吐与其测量条件（[中文](docs/PERFORMANCE.zh-CN.md)） |
+| [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | 吞吐与其测量条件 |
 | [`THIRD_PARTY.md`](THIRD_PARTY.md) | 所有上游来源及其许可证 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 改了什么，哪些数字变了 |
+
+## 设计决策
+
+五条选择决定了其余一切。这里只写结论；支撑它们的数字在上面的文档里。
+
+- **流水线用 Zig，C 只出现在「第二实现」的位置。** 训练与部署同一种语言，就消掉了
+  「在我机器上是对的」那个边界。`zig build` 同时是构建系统、测试运行器和交叉编译器，
+  `@Vector` 一份源码产出 AVX2 或 NEON。C 引擎保留下来，是因为它的职责是与 Zig
+  对拍，而不是替代它。
+- **一个字节五个 trit。** 一个 trit 携带 log2(3) ≈ 1.585 bit，而 `3^5 = 243 ≤ 256`，
+  于是一个字节装五个 trit、1.6 bit/权重，解码是一次乘法、一次移位、一次掩码，
+  不含除法（目标 Cortex-M 核没有整数除法）。显而易见的替代是 2 bit/权重：体积大
+  25%，解码却并不更便宜。
+- **每个要出厂的产物配一个 C 引擎。** 往返检查的读方和写方是同一份代码，格式被共同
+  误解时照样能完美往返。所以每个引擎只读打包文件，自己重算指标，再与训练器写进
+  产物 footer 的数字比较；不一致就让 `make deploy-check` 失败。
+- **用 absmean 标度，不用学习出来的阈值。** `scale = mean(|W|)` 加固定 0.5 阈值，
+  使产物成为权重的确定性函数：一条命令、没有标定语料、没有优化器状态要版本化。
+  不够好的地方，答案是更多训练（QAT），而不是更聪明的量化器。
+- **fp32 后端保留。** 量化后的数字离开同进程的基线就没有意义。两个后端回答同一个
+  接口，1.77 bit 的代价因此画在同一张图上，而不是写在表格里。
 
 ## 样例 1 — `gpt_names`：字符级 micro-GPT
 
@@ -274,8 +292,7 @@ make deploy-check  # 两者均执行
 对照参考 —— 最初的 microGPT，仅 fp32，在同一份人名数据上训练。训练
 与推理使用两条独立的前向路径 —— `gpt_forward` 为反向传播保存激活，
 `gpt_forward_infer` 是专用的单 token 路径，logits 与之相差不超过 fp32
-舍入误差。[docs/PERFORMANCE.zh-CN.md](docs/PERFORMANCE.zh-CN.md)
-（英文版 [PERFORMANCE.md](docs/PERFORMANCE.md)）介绍了该路径的原理与
+舍入误差。[docs/PERFORMANCE.md](docs/PERFORMANCE.md) 介绍了该路径的原理与
 瓶颈。
 
 | 机器 | 后端 | tok/sec | 条件 |

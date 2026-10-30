@@ -82,12 +82,37 @@ uv sync --extra serve                # the sketch app
 | document | what it answers |
 | --- | --- |
 | [`docs/ARTIFACT-FORMAT.md`](docs/ARTIFACT-FORMAT.md) | the five binary formats, field by field, plus the ternary codec's golden vectors |
-| [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md) | which lines are mine, which are a port, which are vendored |
 | [`docs/TIMESTRAL.md`](docs/TIMESTRAL.md) | what 1.6 bits/weight costs Timestral-5M, measured |
-| [`docs/adr/`](docs/adr/) | why Zig, why 5 trits, why a second C implementation, why absmean, why keep fp32 |
 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | throughput, with the machine and the method |
 | [`THIRD_PARTY.md`](THIRD_PARTY.md) | every upstream this is derived from, and its license |
 | [`CHANGELOG.md`](CHANGELOG.md) | what changed, and which numbers moved |
+
+## Design decisions
+
+Five choices shape everything else here. Each is stated as a conclusion; the numbers
+behind them are in the documents above.
+
+- **Zig for the pipeline, C only where C is a second implementation.** Training and
+  deployment in one language removes the boundary where "it matched on my machine"
+  stops being true. `zig build` is the build system, the test runner and the
+  cross-compiler, and `@Vector` emits AVX2 or NEON from one source. The C engines stay
+  because their job is to disagree with Zig, not to replace it.
+- **Five trits per byte.** A trit carries log2(3) ≈ 1.585 bits and `3^5 = 243 ≤ 256`, so
+  a byte holds five of them at 1.6 bits per weight, decoded with one multiply, one
+  shift and one mask — no division, which the targeted Cortex-M cores do not have. The
+  obvious alternative, 2 bits per weight, is 25 % larger for a decode that is not
+  cheaper.
+- **A C engine per shipped artifact.** A round-trip check shares its reader with its
+  writer, so a shared misreading of the format round-trips perfectly. Each engine reads
+  only the packed file, recomputes the metric, and compares it against the value the
+  trainer wrote into the artifact's footer; a mismatch fails `make deploy-check`.
+- **absmean scales, not a learned threshold.** `scale = mean(|W|)` with a fixed 0.5
+  threshold makes the artifact a deterministic function of the weights: one command, no
+  calibration corpus, no optimizer state to version. Where that is not enough, the
+  answer here is more training (QAT), not a smarter quantizer.
+- **The fp32 backend stays.** A quantized number means nothing without its baseline
+  measured in the same process. Both backends answer one endpoint, so the price of
+  1.77 bits is drawn on the same chart instead of quoted in a table.
 
 ## Example 1 — `gpt_names`: char-level micro-GPT
 
@@ -155,7 +180,8 @@ storage
   packed 5-trits/byte  :    672 bytes  (15.0x smaller than fp32)
 
 latency (host CPU, float activations)
-  ternary weights      :  41.1 us/inference  (1320M MACs/s)
+  fp32 weights         :  45.67 us/inference  (1187.0M MACs/s)
+  ternary weights      :  42.93 us/inference  (1262.6M MACs/s)
 
 packed round-trip: OK (lossless)   qat recovery 99.9% of fp32->ptq loss gap
 ```
@@ -300,7 +326,7 @@ inference use separate forward passes — `gpt_forward` stores activations
 for backprop, `gpt_forward_infer` is a specialised single-token path
 whose logits match it to within fp32 rounding.
 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) covers how that path works
-and what limits it ([中文版](docs/PERFORMANCE.zh-CN.md)).
+and what limits it.
 
 | machine | backend | tok/sec | conditions |
 | --- | --- | --- | --- |

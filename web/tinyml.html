@@ -293,7 +293,8 @@
 </div></footer>
 
 <script>
-// 2026-09-02 实测（cnn_run.txt，AMD Ryzen 9 7940H）。
+// 2026-09-02 在 AMD Ryzen 9 7940H 上运行 `zig-out/bin/example-cnn.exe` 采集的快照，
+// 页面数据以此为准；重新构建后重跑会得到同量级的曲线，但具体数值可能不同。
 // x 轴为累计步数：fp32 阶段 1..2000，QAT 阶段 2001..3500（QAT 内部步号 1..1500 + 2000）。
 // avg 为批量损失的指数滑动平均（running = running*0.99 + batch_loss*0.01，初值 ln4）。
 const DATA = {

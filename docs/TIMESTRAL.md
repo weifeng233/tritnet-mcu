@@ -167,9 +167,15 @@ evaluation path.
 | MASE ↓ | 5.89 | 8.91 |
 | 90 % interval coverage | 0.961 | 0.901 |
 | beats persistence | 79 % | 75 % |
-| latency, one stroke (on the page) | 31–44 ms | **16–22 ms** |
+| latency, one stroke (on the page) | 31–44 ms (PyTorch) | **16–22 ms** (Zig) |
 | latency, 24 strokes batched | ~17–20 ms/stroke | ~17–20 ms/stroke |
 | artifact | 20.8 MB | **1.15 MB** |
+
+The latency gap is the backend, not the trits. 31–44 ms is PyTorch; 16–22 ms is the Zig
+engine, and that same engine run on fp32 latents is 3–8 % *faster* than on trits
+(`--serial`, three runs each). Compression is what 1.77 bits buys here — `Matrix.gemv`
+in `src/timestral/model.zig` converts the trits to floats and does the same multiply-adds,
+so nothing is saved on the arithmetic side.
 
 Per stroke family (pinball, lower is better):
 
@@ -216,8 +222,10 @@ make sketch                           # the app, both backends
   what the app receives. A different domain would want its own corpus; the naive-PTQ row
   shows what happens without one.
 - **The fine-tune is not free even in fp32.** The QAT latents evaluated without quantization
-  score 0.0769 against 0.0711 for the released checkpoint: fine-tuning on a narrow stroke
-  distribution costs ~8 % even before any trit is applied.
+  score 0.0946 against 0.0711 for the released checkpoint: fine-tuning on a narrow stroke
+  distribution costs ~33 % even before any trit is applied. (PyTorch and the Zig engine
+  agree on that number; about two thirds of the total 0.0711 → 0.1071 gap is this, and one
+  third is the ternarization itself.)
 - **fp32 stays available.** The app keeps the fp32 backend, which is the honest way to see
   what the quantization cost.
 

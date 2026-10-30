@@ -279,5 +279,7 @@ first vector; it is here so the next such mistake is caught by a command instead
 a reader with a debugger.
 
 Sizes quoted above (21 MB → 1.15 MB) are from `modeldata/timestral_eval_*.json`,
-which records the byte count it measured next to the metrics. On the committed
-artifact the checker reports 75 records and 1,152,070 bytes consumed.
+which records the byte count it measured next to the metrics. On the released
+`timestral_packed.bin` — a release asset rather than a committed file, since 2.3 MB of
+binaries do not belong in git history — the checker reports 75 records and 1,152,070
+bytes consumed.
