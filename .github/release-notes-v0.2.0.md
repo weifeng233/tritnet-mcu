@@ -57,6 +57,8 @@ at that point the `LICENSE` line still named the author of microGPT-C and
 `THIRD_PARTY.md` did not exist. History was rewritten before publication to drop the
 vendored GPL tree, so old commit hashes from before 2026-10-30 do not resolve.
 
-This tag points at the commit that includes CI, so the badge and the workflow it links
-to describe the same tree the artifacts were built from.
+This tag tracks the head of the standardization work and was moved twice within the
+first hour: once to include the CI workflow it promised, and once to include the fix
+CI found on its first real run (the app smoke test needed the worker built). The
+failed tag run is still in the Actions history; nothing here pretends otherwise.
 
