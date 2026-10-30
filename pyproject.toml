@@ -1,0 +1,56 @@
+# Python tooling for TritNet-MCU.
+#
+# The Zig half of this repository has no dependencies; the Python half is where the
+# heavyweight ones live (PyTorch for the Timestral reference and QAT, FastAPI for the
+# sketch app). They are split into extras so that `uv sync --extra eval` does not drag
+# in a 2 GB wheel just to draw a figure.
+#
+#   uv sync --extra eval                 # figures and metrics: numpy + matplotlib
+#   uv sync --extra qat --extra eval     # fine-tuning: torch + safetensors + HF hub
+#   uv sync --extra serve                # the sketch app
+#
+# The lock file (uv.lock) is committed: "works on my machine" is what this project
+# spends its time arguing against.
+
+[project]
+name = "tritnetmcu-tools"
+version = "0.2.0"
+description = "Evaluation, quantization and serving tools for the TritNet-MCU ternary pipeline"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+
+[project.optional-dependencies]
+eval = [
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+]
+qat = [
+    "torch>=2.4",
+    "numpy>=1.24",
+    "safetensors>=0.4",
+    "huggingface_hub>=0.23",
+]
+serve = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2",
+]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+# The scripts are run in place (`python python/timestral_qat.py`), not installed as a
+# package: there is no importable module tree to build, so uv must not try to build one.
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# F401: the parity scripts import the reference package for its side effects on
+# sys.path; E501 is off because the long lines are tables and format strings.
+ignore = ["E501"]
