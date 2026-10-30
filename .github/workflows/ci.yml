@@ -84,6 +84,11 @@ jobs:
       - name: install make
         run: sudo apt-get update && sudo apt-get install -y make
 
+      # Install everything first: `example-cnn` alone does not install
+      # zig-out/bin/timestral-cli, and the app smoke test below needs it.
+      - name: build
+        run: zig build --release=fast --summary all
+
       # Retrain the fast example (13 s) and let the C engine re-derive its
       # numbers from the artifact it just wrote: that is the whole deploy leg.
       # example-ncps takes ~5 minutes, so the NCP artifacts are checked as
