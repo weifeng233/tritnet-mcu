@@ -42,7 +42,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "reference"))
 
 WEB = ROOT / "web" / "sketch-a-series.html"
-WORKER = Path(os.environ.get("TIMESTRAL_WORKER", ROOT / "zig-out" / "bin" / "timestral-cli.exe"))
+# The worker is built by `zig build`, which appends .exe on Windows only. Hardcoding
+# the suffix made `make sketch` fail on Linux and macOS with "worker not found".
+WORKER_NAME = "timestral-cli.exe" if os.name == "nt" else "timestral-cli"
+WORKER = Path(os.environ.get("TIMESTRAL_WORKER", ROOT / "zig-out" / "bin" / WORKER_NAME))
 ARTIFACT = Path(os.environ.get("TIMESTRAL_ARTIFACT", ROOT / "modeldata" / "timestral_packed.bin"))
 FP32_DIR = Path(os.environ.get("TIMESTRAL_FP32", ROOT / "modeldata" / "timestral-5m"))
 EVAL_FP32 = ROOT / "modeldata" / "timestral_eval_fp32.json"
@@ -262,7 +265,30 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--backends", default="fp32,ternary", help="comma separated: fp32,ternary")
+    # Smoke-testable without a model or a GPU: prints what the app would load and
+    # what is missing, then exits. CI uses it to check the platform-specific worker
+    # path on Linux/macOS, which is exactly the thing that was wrong for months.
+    ap.add_argument("--check", action="store_true", help="print the resolved paths and exit")
     args = ap.parse_args()
+
+    if args.check:
+        # Can the app start at all? The page and the worker are required; the model
+        # files are only needed by the backend you enable, and their absence is
+        # reported by the backend itself with a clearer message.
+        missing = 0
+        for label, path, required in (
+            ("worker", WORKER, True),
+            ("page", WEB, True),
+            ("artifact", ARTIFACT, False),
+            ("fp32 checkpoint", FP32_DIR / "model.safetensors", False),
+        ):
+            ok = path.exists()
+            if required and not ok:
+                missing += 1
+            state = "ok " if ok else ("MISSING" if required else "missing (needed only by its backend)")
+            print(f"{label:16} {state:45} {path}", flush=True)
+        print(f"backends         available: {', '.join(sorted(BACKENDS))}; requested: {args.backends}", flush=True)
+        raise SystemExit(1 if missing else 0)
 
     ENABLED = [b.strip() for b in args.backends.split(",") if b.strip() in BACKENDS]
     if not ENABLED:

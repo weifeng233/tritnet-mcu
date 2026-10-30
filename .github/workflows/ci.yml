@@ -93,3 +93,18 @@ jobs:
 
       - name: deployment check
         run: make deploy-check
+
+      # The sketch app used to look for `timestral-cli.exe` on every platform,
+      # which is exactly the kind of bug a Windows-only developer never sees.
+      # --check resolves the paths and exits non-zero if the worker or the page
+      # is missing, without needing a model download.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: app smoke test
+        run: |
+          python -m pip install --upgrade pip
+          pip install "fastapi>=0.110" "uvicorn>=0.29" "pydantic>=2" "numpy>=1.24"
+          test ! -e zig-out/bin/timestral-cli.exe   # no .exe on Linux
+          python deploy/app.py --check
