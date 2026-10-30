@@ -57,8 +57,10 @@ at that point the `LICENSE` line still named the author of microGPT-C and
 `THIRD_PARTY.md` did not exist. History was rewritten before publication to drop the
 vendored GPL tree, so old commit hashes from before 2026-10-30 do not resolve.
 
-This tag tracks the head of the standardization work and was moved twice within the
-first hour: once to include the CI workflow it promised, and once to include the fix
-CI found on its first real run (the app smoke test needed the worker built). The
-failed tag run is still in the Actions history; nothing here pretends otherwise.
+This tag tracks the head of the standardization work and was moved three times within
+its first hour, each time because the release was ahead of the facts: to include the CI
+workflow it promised, to include the fix CI found on its first real run (the app smoke
+test needed the worker built), and to include the repair of SOURCE_DATE_EPOCH in the
+legacy exporter. The failed tag run is still in the Actions history; nothing here
+pretends otherwise.
 
