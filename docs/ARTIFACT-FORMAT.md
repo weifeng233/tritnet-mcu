@@ -14,7 +14,7 @@ which is the point: the C engines in `c/` are exactly such readers.
 | --- | --- | --- | --- |
 | `TRTL` v2 | `54 52 54 4C 02 00 00 00` | `src/timestral/artifact.zig` | `timestral-cli`, the parity tools |
 | `MGPTQ001` | `4D 47 50 54 51 30 30 31` | `examples/gpt_names.zig` | same example, round-trip check |
-| `CNN1Q001` | `43 4E 4E 31 51 30 30 31` | `examples/gesture_cnn.zig` | `c/cnn1d_inference.c` |
+| `CNN1Q002` | `43 4E 4E 31 51 30 30 32` | `examples/gesture_cnn.zig` | `c/cnn1d_inference.c` |
 | `CNN1V001` | `43 4E 4E 31 56 30 30 31` | `examples/gesture_cnn.zig` | `c/cnn1d_inference.c` |
 | `NCPSQ001` | `4E 43 50 53 51 30 30 31` | `examples/liquid_sine.zig` | `c/ncps_inference.c` |
 | `NCPSV001` | `4E 43 50 53 56 30 30 31` | `examples/liquid_sine.zig` | `c/ncps_inference.c` |
@@ -142,21 +142,25 @@ After the header come parameter records in a **fixed canonical order**. There is
 table of contents and no name strings: the order *is* the schema, so a reader that
 skips a record is broken rather than lenient.
 
-Two record kinds:
+Matrix records carry a one-byte kind tag; **vector records do not**. That asymmetry is
+deliberate: a matrix has to say whether it is packed or dense, a vector never has a
+choice to make.
 
 ```
-fp32 vector:      u8 0 | u32 n | f32 values[n]
+fp32 vector:      u32 n | f32 values[n]
+dense matrix:     u8 0 | u32 rows | u32 cols | f32 values[rows*cols]
 ternary matrix:   u8 1 | u32 rows | u32 cols | f32 scales[rows] | u32 nbytes | u8 trits[nbytes]
 ```
 
 `nbytes` must equal `ceil(rows * cols / 5)`; a mismatch is `error.BadRecord`. Row `r`
 of the matrix owns `scales[r]` and the `cols` trits that follow it in row-major order.
-A dense (never-ternarized) matrix uses the same kind-0 record followed by a `rows` and
-`cols` pair:
 
-```
-dense matrix:     u8 0 | u32 rows | u32 cols | f32 values[rows*cols]
-```
+> A reader written from an earlier revision of this document expected a `u8 0` in front
+> of every vector and desynchronized at the first vector in the file. The asymmetry
+> above is the corrected rule, and the test
+> `record layout round-trips a small model without a checkpoint` executes this exact
+> layout — vectors, a dense matrix and ternary matrices — so the document and the code
+> cannot drift apart again.
 
 Canonical order:
 
@@ -181,12 +185,14 @@ if (try r.u32v() != VERSION) return error.BadVersion;
 
 A `TRTL` file with a different version is rejected. We do not attempt to read v1
 files with the v2 reader: a wrong forecast is worse than a clear error. Same rule for
-`BadConfig` (`n_layers` or `n_knots` beyond the in-memory maximum) and `BadRecord`
-(unknown record kind, wrong `nbytes`).
+`BadConfig` (`n_layers` or `n_knots` beyond the in-memory maximum), `BadRecord`
+(unknown record kind, wrong `nbytes`) and `TrailingBytes` (the file ended later than
+the canonical order says it should — a reader that ignores the tail is hiding a
+disagreement about the format).
 
 ---
 
-## 3. `MGPTQ001`, `CNN1Q001`, `NCPSQ001` — the framework's example containers
+## 3. `MGPTQ001`, `CNN1Q002`, `NCPSQ001` — the framework's example containers
 
 These three are the same pattern: an 8-byte ASCII magic (the version is *inside* the
 magic: `Q001`), a run of `u32` dimensions, then records. They are consumed by the C
@@ -204,7 +210,7 @@ absmean is what the trainer used; see `framework/quant.zig`).
 | format | header after magic | body |
 | --- | --- | --- |
 | `MGPTQ001` | `u32 n_embd, n_head, n_layer, block_size, mlp_dim, vocab_size, BOS, n_uchars`, then `u8 uchars[n_uchars]` (the tokenizer) | `f32 wte[vocab_size*n_embd]`, `f32 wpe[block_size*n_embd]`, then per layer `matrix` × 4 (wq, wk, wv, wo) and `matrix` × 2 (fc1, fc2), then `matrix` lm_head. Norms are recomputed, not stored; embeddings stay fp32. |
-| `CNN1Q001` | `u32 C0, T0, C1, K1, C2, K2, n_class` | `matrix` × 3 (conv1, conv2, fc), then the fp32 bias arrays `C1`, `C2`, `n_class` |
+| `CNN1Q002` | `u32 C0, T0, C1, K1, C2, K2, n_class` | `matrix` × 3 (conv1, conv2, fc), then the fp32 bias arrays `C1`, `C2`, `n_class`, then `f64 expected_accuracy` — the trainer's val accuracy, which the C engine recomputes and compares |
 | `NCPSQ001` | `u32 in_size, units_total, out_dim, n_layers, mode, bb_units, proj_size, cell_kind` | if `cell_kind` = 1: `matrix` × 2 (synapse, sensory) then 13 fp32 physical parameter arrays (`sigma, mu, erev, sensory_sigma, sensory_mu, sensory_erev, gleak, vleak, cm, input_w, input_b, output_w, output_b`); then an optional readout; then per layer `u32 n_sens, u32 n_out` and `matrix + f32 bias` records for `ff1`, and either (`ff2`, `t_a`, `t_b` matrices) or (`tau`, `a_par` vectors); then an optional projection; finally `f64 expected_mse` used by the round-trip check |
 
 The `V001` files are their held-out evaluation sets, so the C engine can score without
@@ -258,7 +264,7 @@ Both are little-endian `f32` and are documented as much by
 zig build test --summary all            # includes the codec golden vectors
 make quantize-timestral                 # TRTL from modeldata/timestral_qat
 make quantize-timestral-ptq             # TRTL baseline, --no-calibrate
-make deploy-check                       # CNN1Q001 / NCPSQ001 through the C engines
+make deploy-check                       # CNN1Q002 / NCPSQ001 through the C engines
 make timestral-check                    # TRTL vs PyTorch, end to end
 ```
 
