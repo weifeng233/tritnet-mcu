@@ -130,3 +130,24 @@ test "distinct blocks pack to distinct bytes" {
         seen[pk[0]] = true;
     }
 }
+
+test "golden vectors: the worked examples in docs/ARTIFACT-FORMAT.md" {
+    // These are published in the format document so an independent implementation
+    // can be checked against this one without reading Zig. If the codec ever
+    // changes, the document and this test change together.
+    const Case = struct { trits: [5]i8, byte: u8 };
+    const cases = [_]Case{
+        .{ .trits = .{ 1, 0, -1, 0, 1 }, .byte = 0xCD }, // base-3 194 -> ceil(194*256/243) = 205
+        .{ .trits = .{ -1, -1, -1, -1, -1 }, .byte = 0x00 }, // 0, the low end
+        .{ .trits = .{ 1, 1, 1, 1, 1 }, .byte = 0xFF }, // 242, the high end
+        .{ .trits = .{ 1, 1, 1, 1, -1 }, .byte = 0xFD }, // 240 -> ceil(240*256/243) = 253
+    };
+    var pk: [1]u8 = undefined;
+    for (cases) |c| {
+        pack5(pk[0..], c.trits[0..]);
+        try std.testing.expectEqual(c.byte, pk[0]);
+        var back: [5]i8 = undefined;
+        unpack5(back[0..], pk[0..]);
+        try std.testing.expectEqualSlices(i8, c.trits[0..], back[0..]);
+    }
+}
