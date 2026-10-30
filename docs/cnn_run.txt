@@ -26,7 +26,7 @@ step 1700 / 2000 | loss 0.0020  (avg 0.0017)
 step 1800 / 2000 | loss 0.0033  (avg 0.0017)
 step 1900 / 2000 | loss 0.0011  (avg 0.0017)
 step 2000 / 2000 | loss 0.0020  (avg 0.0017)
-fp32 train: 4.695 s  (426 steps/sec)
+fp32 train: 5.781 s  (346 steps/sec)
 
 eval (accuracy, float activations)
   fp32  train 100.00%   val 100.00%   (val loss 0.0001)
@@ -49,7 +49,7 @@ step 1200 / 1500 | loss 0.0398  (avg 0.0474)
 step 1300 / 1500 | loss 0.0628  (avg 0.0461)
 step 1400 / 1500 | loss 0.0295  (avg 0.0447)
 step 1500 / 1500 | loss 0.0392  (avg 0.0437)
-qat  train: 4.653 s  (322 steps/sec)
+qat  train: 4.735 s  (317 steps/sec)
 
 eval (accuracy, float activations)
   qat   train 100.00%   val 100.00%
@@ -69,16 +69,17 @@ storage
   packed 5-trits/byte  :    672 bytes  (15.0x smaller than fp32)
 
 latency (host CPU, float activations)
-  fp32 weights         :  43.46 us/inference  (1247.4M MACs/s)
-  ternary weights      :  41.07 us/inference  (1320.0M MACs/s)
+  fp32 weights         :  45.67 us/inference  (1187.0M MACs/s)
+  ternary weights      :  42.93 us/inference  (1262.6M MACs/s)
 
 == phase 4: packed export + round-trip ==
-  wrote modeldata/cnn1d_packed.bin (673 bytes)
+  wrote modeldata/cnn1d_packed.bin (681 bytes)
   wrote modeldata/cnn1d_valset.bin (val split for the C engine)
   val acc pre-export   : 100.00% (loss 0.001420)
   val acc reloaded     : 100.00% (loss 0.001420)
+  footer accuracy      : 100.00% (what the C engine checks)
   round-trip: OK (lossless)
 
 summary
   fp32 val 100.00% | ptq val 65.75% | qat val 100.00% | qat recovery 99.9% of fp32->ptq loss gap
-  model 672 bytes (15.0x < fp32) | 41.07 us/inference | sink 654652.3750
+  model 672 bytes (15.0x < fp32) | 42.93 us/inference | sink 654652.3750

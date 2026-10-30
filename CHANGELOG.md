@@ -78,7 +78,7 @@ inherited microGPT-C copyright line, `THIRD_PARTY.md` did not exist, and
 licensing claim and had no business being the thing someone checks out first.
 
 The commit is still an ancestor of `main` (reachable with `git log`), and the local
-tags `v0.1.0` / `v0.1.0-pre-standardize` point at it for rollback. Commits before the
+tag `v0.1.0-pre-standardize` points at it for rollback. Commits before the
 licensing change carry the inherited microGPT-C copyright line; that is a record of
 history, not a statement about the current license.
 
