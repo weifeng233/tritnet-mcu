@@ -135,7 +135,7 @@ int main(int argc, char **argv) {
     /* ---- model ---- */
     size_t mlen;
     uint8_t *m = read_file(model_path, &mlen);
-    if (mlen < 36 || memcmp(m, "CNN1Q001", 8) != 0) die("bad model magic");
+    if (mlen < 48 || memcmp(m, "CNN1Q002", 8) != 0) die("bad model magic");
     uint32_t dims[7];
     memcpy(dims, m + 8, sizeof(dims));
     if (dims[0] != C0 || dims[1] != T0 || dims[2] != C1 || dims[3] != K1 ||
@@ -165,6 +165,10 @@ int main(int argc, char **argv) {
     memcpy(b1, m + cur, sizeof(b1)); cur += sizeof(b1);
     memcpy(b2, m + cur, sizeof(b2)); cur += sizeof(b2);
     memcpy(b3, m + cur, sizeof(b3)); cur += sizeof(b3);
+    /* footer: the val accuracy the Zig trainer measured before export */
+    double expected_acc;
+    memcpy(&expected_acc, m + cur, sizeof(expected_acc)); cur += sizeof(expected_acc);
+    if (cur != mlen) die("trailing bytes in model file");
     free(m);
     printf("model %s: %d trits packed, scales %.5f / %.5f / %.5f\n",
            model_path, C1 * C0 * K1 + C2 * C1 * K2 + N_CLASS * FC_IN, s1, s2, s3);
@@ -217,8 +221,11 @@ int main(int argc, char **argv) {
     free(v);
 
     static const char *names[N_CLASS] = { "rest", "shake", "circle", "tap" };
-    printf("\nCNN1Q001 deployment check (%d val samples)\n", (int)n_val);
-    printf("  val accuracy : %.2f%%  (loss %.4f)\n", 100.0 * correct / n_val, loss_sum / n_val);
+    printf("\nCNN1Q002 deployment check (%d val samples)\n", (int)n_val);
+    double acc = (double)correct / (double)n_val;
+    printf("  val accuracy : %.2f%%  (loss %.4f)\n", 100.0 * acc, loss_sum / n_val);
+    printf("  footer       : %.2f%%  (the trainer's number, stored in the artifact)\n", 100.0 * expected_acc);
+    printf("  status       : %s\n", fabs(acc - expected_acc) <= 1e-12 ? "OK (matches the Zig trainer)" : "MISMATCH");
     printf("  confusion matrix (rows = true, cols = pred)\n");
     printf("            rest  shake circle   tap | recall\n");
     for (int tc = 0; tc < N_CLASS; tc++) {
@@ -233,5 +240,5 @@ int main(int argc, char **argv) {
            us, 54208.0 / us);
 
     free(t1); free(t2); free(t3);
-    return 0;
+    return fabs(acc - expected_acc) <= 1e-12 ? 0 : 1;
 }

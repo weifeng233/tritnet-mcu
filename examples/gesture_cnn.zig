@@ -71,7 +71,7 @@ const MACS_PER_INFERENCE: usize =
 const N_PARAMS: usize = C1 * C0 * K1 + C1 + C2 * C1 * K2 + C2 + N_CLASS * FC_IN + N_CLASS;
 const N_TERNARY: usize = N_PARAMS - C1 - C2 - N_CLASS; // biases stay fp32
 
-const MAGIC = "CNN1Q001";
+const MAGIC = "CNN1Q002";
 const VALSET_MAGIC = "CNN1V001";
 
 const class_names = [4][]const u8{ "rest", "shake", "circle", "tap" };
@@ -652,7 +652,7 @@ fn bench_latency(ternary_weights: bool, iters: usize) f64 {
 // packed model + val split export (consumed by c/cnn1d_inference.c)
 // ---------------------------------------------------------------------------
 
-fn export_model(io: std.Io, path: []const u8) !usize {
+fn export_model(io: std.Io, path: []const u8, expected_acc: f64) !usize {
     var buf: [1024]u8 = undefined;
     var cur: usize = 0;
     const w = &fw.packed_model;
@@ -670,6 +670,10 @@ fn export_model(io: std.Io, path: []const u8) !usize {
     w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB1].w));
     w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB2].w));
     w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB3].w));
+    // The footer is the trainer's own val accuracy. c/cnn1d_inference.c recomputes
+    // the metric from the trits alone and compares, so a decode bug fails the
+    // deployment check instead of printing a plausible number.
+    w.putF64(buf[0..], &cur, expected_acc);
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = buf[0..cur] });
     return cur;
 }
@@ -698,8 +702,9 @@ fn export_valset(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize 
 }
 
 /// Rebuild the deployed model from the packed file. Returns the number of
-/// trits restored.
-fn load_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize {
+/// trits restored and the trainer's footer accuracy, which the caller checks
+/// against the accuracy it computes after reloading.
+fn load_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator, expected_acc: *f64) !usize {
     const fdata = try std.Io.Dir.cwd().readFileAlloc(io, path, alloc, .limited(4096));
     defer alloc.free(fdata);
     var r = fw.packed_model.Reader{ .data = fdata };
@@ -720,6 +725,8 @@ fn load_model(io: std.Io, path: []const u8, alloc: std.mem.Allocator) !usize {
     @memcpy(params[PB2].w, std.mem.bytesAsSlice(f32, b2f));
     const b3f = r.take(N_CLASS * 4) orelse return error.Truncated;
     @memcpy(params[PB3].w, std.mem.bytesAsSlice(f32, b3f));
+    expected_acc.* = r.f64le() orelse return error.Truncated;
+    if (r.take(1) != null) return error.TrailingBytes;
     return trit_total;
 }
 
@@ -800,7 +807,7 @@ pub fn main(init: std.process.Init) u8 {
     _ = clib.printf("\n== phase 4: packed export + round-trip ==\n");
     const model_path = "modeldata/cnn1d_packed.bin";
     const valset_path = "modeldata/cnn1d_valset.bin";
-    const model_size = export_model(init.io, model_path) catch {
+    const model_size = export_model(init.io, model_path, qat_val.acc) catch {
         std.debug.print("failed to write {s}\n", .{model_path});
         return 1;
     };
@@ -812,7 +819,8 @@ pub fn main(init: std.process.Init) u8 {
     _ = clib.printf("  wrote %s (val split for the C engine)\n", @as([*]const u8, @ptrCast(valset_path.ptr)));
 
     const val_before = qat_val;
-    _ = load_model(init.io, model_path, init.gpa) catch {
+    var footer_acc: f64 = 0;
+    _ = load_model(init.io, model_path, init.gpa, &footer_acc) catch {
         std.debug.print("failed to load {s}\n", .{model_path});
         return 1;
     };
@@ -820,7 +828,8 @@ pub fn main(init: std.process.Init) u8 {
     const roundtrip_ok = val_before.acc == val_after.acc and val_before.loss == val_after.loss;
     _ = clib.printf("  val acc pre-export   : %.2f%% (loss %.6f)\n", 100.0 * val_before.acc, val_before.loss);
     _ = clib.printf("  val acc reloaded     : %.2f%% (loss %.6f)\n", 100.0 * val_after.acc, val_after.loss);
-    if (roundtrip_ok) {
+    _ = clib.printf("  footer accuracy      : %.2f%% (what the C engine checks)\n", 100.0 * footer_acc);
+    if (roundtrip_ok and footer_acc == val_after.acc) {
         _ = clib.printf("  round-trip: OK (lossless)\n");
     } else {
         _ = clib.printf("  round-trip: MISMATCH\n");
