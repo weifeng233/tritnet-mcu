@@ -1,5 +1,9 @@
 # Timestral-5M, deployed and ternarized
 
+- **Applies to:** `main` as of v0.2.0
+- **Last verified:** 2026-10-30
+- **Verification:** `make timestral-check` (parity against PyTorch), `make timestral-eval` (regenerates every number below)
+
 Two questions drove this example:
 
 1. **Can this repository deploy someone else's model?** Timestral-5M is Mistral AI's

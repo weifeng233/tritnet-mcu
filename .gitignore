@@ -15,6 +15,9 @@ zig-out/
 *.exe
 __pycache__/
 .commandcode/
+# python: the locked environment is created by `uv sync`, never committed
+.venv/
+python/**/*.pyc
 # Timestral-5M: downloaded checkpoints and QAT outputs (use make fetch-timestral / timestral-qat)
 modeldata/timestral-5m/
 modeldata/timestral_qat*/

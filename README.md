@@ -3,7 +3,7 @@
 English | [简体中文](README.zh-CN.md)
 
 A pure-Zig **train → quantize → deploy framework** for ternary-weight
-{-1, 0, +1} MCU models, plus three worked examples. Nothing beyond libc:
+{-1, 0, +1} MCU models, plus four worked examples. Nothing beyond libc:
 one command runs fp32 pretraining, BitNet-style quantization-aware
 training, held-out validation, a ternary-packed model export, and a
 round-trip check that the packed artifact is lossless — seconds per
@@ -11,7 +11,7 @@ example, on a laptop.
 
 The framework lives in `src/framework.zig` (RNG, ternary codec, absmean
 QAT quantizer, Adam + cosine schedule, packed-model container, timing).
-The `examples/` directory drives it with three deliberately different
+The `examples/` directory drives it with four deliberately different
 model families; the C engines in `c/` are the deploy leg, re-deriving
 every trainer number from the packed artifacts alone.
 
@@ -63,6 +63,28 @@ make deploy-check                       # C deployment check on every packed art
 make timestral-check                    # example 4: end-to-end parity against PyTorch
 make sketch                             # example 4: the drawing app (http://127.0.0.1:8000)
 ```
+
+Requirements: **Zig 0.16.0**, `make`, and Python 3.11+ only for the tools
+(`python/`, `deploy/`). The Zig half has no dependencies at all. Python extras are
+locked with `uv`:
+
+```bash
+uv sync --extra eval                 # figures and metrics
+uv sync --extra qat --extra eval     # Timestral fine-tuning
+uv sync --extra serve                # the sketch app
+```
+
+## Documentation
+
+| document | what it answers |
+| --- | --- |
+| [`docs/ARTIFACT-FORMAT.md`](docs/ARTIFACT-FORMAT.md) | the five binary formats, field by field, plus the ternary codec's golden vectors |
+| [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md) | which lines are mine, which are a port, which are vendored |
+| [`docs/TIMESTRAL.md`](docs/TIMESTRAL.md) | what 1.6 bits/weight costs Timestral-5M, measured |
+| [`docs/adr/`](docs/adr/) | why Zig, why 5 trits, why a second C implementation, why absmean, why keep fp32 |
+| [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | throughput, with the machine and the method |
+| [`THIRD_PARTY.md`](THIRD_PARTY.md) | every upstream this is derived from, and its license |
+| [`CHANGELOG.md`](CHANGELOG.md) | what changed, and which numbers moved |
 
 ## Example 1 — `gpt_names`: char-level micro-GPT
 

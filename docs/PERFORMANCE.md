@@ -1,5 +1,9 @@
 # Performance notes
 
+- **Applies to:** `main` as of v0.2.0
+- **Last verified:** 2026-10-30
+- **Verification:** `zig build --release=fast run` and `zig build --release=fast example-gpt` on the machine named below
+
 How the inference forward differs from the training one, and where the
 time per token goes.
 

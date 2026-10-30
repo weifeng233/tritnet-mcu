@@ -1,5 +1,9 @@
 # 性能分析
 
+- **适用范围：** v0.2.0 的 `main`
+- **最后验证：** 2026-10-30
+- **验证命令：** 在下文标注的机器上运行 `zig build --release=fast run` 与 `zig build --release=fast example-gpt`
+
 本文说明推理前向与训练前向的差异，以及每个 token 的耗时分布。
 
 ## 推理路径

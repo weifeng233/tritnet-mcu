@@ -3,13 +3,13 @@
 简体中文 | [English](README.md)
 
 一个纯 Zig 的**训练 → 量化 → 部署框架**，面向三元权重 {-1, 0, +1} 的
-MCU 模型，附带三个完整可复现的样例。除 libc 外零依赖：一条命令完成
+MCU 模型，附带四个完整可复现的样例。除 libc 外零依赖：一条命令完成
 fp32 预训练、BitNet 风格量化感知训练（QAT）、留出集验证、三元打包
 导出，以及验证打包产物无损的往返校验 —— 每个样例在笔记本电脑上
 数秒内完成。
 
 框架本体在 `src/framework.zig`（RNG、三元编解码、absmean QAT 量化器、
-Adam + 余弦调度、打包模型容器、计时）。`examples/` 目录提供三个刻意
+Adam + 余弦调度、打包模型容器、计时）。`examples/` 目录提供四个刻意
 不同的模型家族样例；`c/` 中的 C 引擎用于部署验证，仅凭打包产物复现
 训练器的全部指标。
 
@@ -60,6 +60,28 @@ make deploy-check                       # 对全部打包产物做 C 部署校�
 make timestral-check                    # 样例 4 与 PyTorch 的端到端数值校验
 make sketch                             # 样例 4 的绘图预测网页（http://127.0.0.1:8000）
 ```
+
+依赖：**Zig 0.16.0**、`make`，Python 3.11+ 仅用于工具链（`python/`、`deploy/`）。
+Zig 部分零依赖。Python 依赖由 `uv` 锁定：
+
+```bash
+uv sync --extra eval                 # 作图与指标
+uv sync --extra qat --extra eval     # Timestral 微调
+uv sync --extra serve                # 绘图服务
+```
+
+## 文档
+
+| 文档 | 回答什么问题 |
+| --- | --- |
+| [`docs/ARTIFACT-FORMAT.md`](docs/ARTIFACT-FORMAT.md) | 五种二进制格式逐字段说明，以及三元编解码的黄金测试向量 |
+| [`docs/OWNERSHIP.md`](docs/OWNERSHIP.md) | 哪些是我写的、哪些是移植、哪些是内嵌 |
+| [`docs/TIMESTRAL.md`](docs/TIMESTRAL.md) | 1.6 bit/权重在 Timestral-5M 上到底付出多少代价（实测） |
+| [`docs/TIMESTRAL-TRADEOFFS.zh-CN.md`](docs/TIMESTRAL-TRADEOFFS.zh-CN.md) | 上述取舍的中文版本 |
+| [`docs/adr/`](docs/adr/README.md) | 为什么用 Zig、为什么 5 trits、为什么双实现、为什么 absmean、为什么保留 fp32 |
+| [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | 吞吐与其测量条件（[中文](docs/PERFORMANCE.zh-CN.md)） |
+| [`THIRD_PARTY.md`](THIRD_PARTY.md) | 所有上游来源及其许可证 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 改了什么，哪些数字变了 |
 
 ## 样例 1 — `gpt_names`：字符级 micro-GPT
 
