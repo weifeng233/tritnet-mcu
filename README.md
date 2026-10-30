@@ -288,8 +288,10 @@ and what limits it ([中文版](docs/PERFORMANCE.zh-CN.md)).
 `c/inference.c`). The Zig framework supersedes it; the scripts are kept
 because their checkpoint artifacts (`modeldata/bitnet_gpt.pth`,
 `modeldata/bitnet_gpt_weights.npz`) document the quantization semantics
-the framework mirrors. `reference/` holds the vendored BitNetMCU and
-mlp-mcu projects that inspired the scheme.
+the framework mirrors. The two projects that inspired the scheme,
+[BitNetMCU](https://github.com/cpldcpu/BitNetMCU) and
+[microGPT-C](https://github.com/vixhal-baraiya/microgpt-c), are credited in
+[THIRD_PARTY.md](THIRD_PARTY.md); see there for why neither is vendored.
 
 ## Layout
 
@@ -307,7 +309,7 @@ examples/            worked examples, one binary each
 c/                   C deployment engines (cnn1d, ncps) + fp32 C reference
 deploy/              the sketch-a-series server (FastAPI) + its README
 python/              legacy PyTorch QAT path, plus the Timestral tools (QAT, parity, figures)
-reference/           vendored references: BitNetMCU/, mlp-mcu/, timestral/
+reference/           vendored reference: timestral/ (Apache-2.0), sketch-a-series/
 web/                 single-page visualizations and the sketch-a-series app
 data/ modeldata/ docs/
 ```

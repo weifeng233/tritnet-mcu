@@ -263,8 +263,10 @@ make deploy-check  # 两者均执行
 是它的 C 头文件导出器（生成 `c/model.h`，由 `c/inference.c` 消费）。
 Zig 框架已取代它们；保留这两个脚本是因为其检查点产物
 （`modeldata/bitnet_gpt.pth`、`modeldata/bitnet_gpt_weights.npz`）记录
-了框架所沿用的量化语义。`reference/` 内嵌了启发本方案的 BitNetMCU 与
-mlp-mcu 项目。
+了框架所沿用的量化语义。启发本方案的两个项目
+[BitNetMCU](https://github.com/cpldcpu/BitNetMCU) 与
+[microGPT-C](https://github.com/vixhal-baraiya/microgpt-c) 的署名见
+[THIRD_PARTY.md](THIRD_PARTY.md)；该文件也说明了它们为何都不再内嵌。
 
 ## 目录结构
 
@@ -282,7 +284,7 @@ examples/            样例，每个样例一个二进制
 c/                   C 部署引擎（cnn1d、ncps）+ fp32 C 对照
 deploy/              sketch-a-series 服务端（FastAPI）及其说明
 python/              旧版 PyTorch QAT 路径，以及 Timestral 工具（QAT、数值校验、作图）
-reference/           内嵌参考项目：BitNetMCU/、mlp-mcu/、timestral/
+reference/           内嵌参考项目：timestral/（Apache-2.0）、sketch-a-series/
 web/                 基准测试的单页可视化，以及 sketch-a-series 网页
 data/ modeldata/ docs/
 ```
