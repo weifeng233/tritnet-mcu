@@ -1,5 +1,8 @@
 # TritNet-MCU (tritnetmcu)
 
+[![ci](https://github.com/weifeng233/tritnet-mcu/actions/workflows/ci.yml/badge.svg)](https://github.com/weifeng233/tritnet-mcu/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 English | [简体中文](README.zh-CN.md)
 
 A pure-Zig **train → quantize → deploy framework** for ternary-weight

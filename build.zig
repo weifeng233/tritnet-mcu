@@ -34,19 +34,27 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the fp32 baseline trainer");
     run_step.dependOn(&fp32_cmd.step);
 
-    // C reference implementation, kept for A/B comparison
+    // C reference implementation, kept for A/B comparison.
+    //
+    // The AVX2/FMA flags are x86-only and `-march=native` is a lie whenever the
+    // build is cross-compiled: CI builds macOS on arm64 and Linux on x86, and
+    // passing -mavx2 to an ARM target is a compile error, not a hint. The C
+    // engine is a correctness reference, so the portable flags are the default
+    // and the vector flags are opt-in by architecture.
+    const is_x86 = switch (target.result.cpu.arch) {
+        .x86, .x86_64 => true,
+        else => false,
+    };
+    const c_flags: []const []const u8 = if (is_x86)
+        &.{ "-Ofast", "-mavx2", "-mfma", "-Wall" }
+    else
+        &.{ "-Ofast", "-Wall" };
     const c_mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    c_mod.addCSourceFile(.{ .file = b.path("c/microgpt.c"), .flags = &[_][]const u8{
-        "-Ofast",
-        "-march=native",
-        "-mavx2",
-        "-mfma",
-        "-Wall",
-    } });
+    c_mod.addCSourceFile(.{ .file = b.path("c/microgpt.c"), .flags = c_flags });
     const c_exe = b.addExecutable(.{
         .name = "microgpt-c",
         .root_module = c_mod,

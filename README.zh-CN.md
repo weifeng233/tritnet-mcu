@@ -1,5 +1,8 @@
 # TritNet-MCU（tritnetmcu）
 
+[![ci](https://github.com/weifeng233/tritnet-mcu/actions/workflows/ci.yml/badge.svg)](https://github.com/weifeng233/tritnet-mcu/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 简体中文 | [English](README.md)
 
 一个纯 Zig 的**训练 → 量化 → 部署框架**，面向三元权重 {-1, 0, +1} 的
