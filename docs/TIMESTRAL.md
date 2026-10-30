@@ -35,7 +35,7 @@ relative error on the fp32 weights, so that gap is quantization, not a porting b
 | inference | fp32, CPU, no GPU needed |
 
 The reference implementation is vendored under
-[`reference/timestral/`](../reference/timestral) (`model.py`, `layers.py`, `masks.py`,
+[`examples/timestral_sketch/reference/timestral/`](../examples/timestral_sketch/reference/timestral) (`model.py`, `layers.py`, `masks.py`,
 `scaler.py`, `forecaster.py` from the upstream repository), so the parity tests and the
 fp32 backend run without network access.
 
@@ -48,16 +48,16 @@ Two details matter for everything that follows:
 - **The advancing refine frame.** The head denormalizes the block in the frame of the last
   context patch, then each later horizon patch is re-denormalized in a frame that folds in
   the block's earlier medians. That re-framing is a Welford scan in float64, and the Zig
-  engine reproduces it (`src/timestral/engine.zig`).
+  engine reproduces it (`examples/timestral_sketch/timestral/engine.zig`).
 
 ## 1. Deploy: the fp32 model behind a drawing app
 
 ```bash
-python deploy/app.py            # http://127.0.0.1:8000
+python examples/timestral_sketch/deploy/app.py            # http://127.0.0.1:8000
 ```
 
-`deploy/app.py` is a FastAPI front end with two interchangeable backends; the page is one
-self-contained HTML file (`web/sketch-a-series.html`). The page resamples the ink to a
+`examples/timestral_sketch/deploy/app.py` is a FastAPI front end with two interchangeable backends; the page is one
+self-contained HTML file (`examples/timestral_sketch/web/sketch-a-series.html`). The page resamples the ink to a
 uniform time grid, sends `{"y": [...], "h": 96}`, and paints the `(96, 21)` answer as a fan
 with a median line — while the finger is still moving, throttled to one request per 120 ms
 and with stale responses dropped.
@@ -78,7 +78,7 @@ checks:
 | batch + metrics (`make timestral-check`) | 24 strokes through PyTorch and through the Zig engine, metrics recomputed by a third (NumPy) implementation | max relative error **2.4·10⁻⁶**, metrics agree to **2·10⁻⁷** |
 
 A fourth check rebuilds the *deployed* weights from the packed artifact in NumPy, loads them
-into PyTorch, and re-runs the forecast: `python/timestral_check_artifact.py` reports
+into PyTorch, and re-runs the forecast: `examples/timestral_sketch/python/timestral_check_artifact.py` reports
 **3.7·10⁻⁶** relative agreement with the Zig engine, which pins the packer and the unpacker
 as well.
 
@@ -113,13 +113,13 @@ On the same 24 strokes:
 | PTQ (per-row absmean, no training) | 0.2023 | 0.522 | 17.55 | 0.777 |
 | **QAT** | **0.1071** | **0.293** | **8.91** | **0.901** |
 
-(`python/timestral_probe.py` and `python/timestral_sensitivity.py` look at the collapse from
+(`examples/timestral_sketch/python/timestral_probe.py` and `examples/timestral_sketch/python/timestral_sensitivity.py` look at the collapse from
 other angles: one scale per tensor is worse than one per row, and keeping any single group
 of layers in fp32 does not rescue naive PTQ — the damage is spread across the stack.)
 
 ### QAT: the framework's quantizer in the training loop
 
-`python/timestral_qat.py` fine-tunes the released checkpoint with the *same* quantizer in the
+`examples/timestral_sketch/python/timestral_qat.py` fine-tunes the released checkpoint with the *same* quantizer in the
 forward pass: `W_q = scale · trit` computed from the fp32 latents every step, straight-through
 gradients back to the latents, and the loss is the model's own pinball loss on a corpus of
 drawn-looking strokes — hand-drawn curves, periodic strokes, trends, random walks, plateaus,
@@ -151,7 +151,7 @@ Three findings worth recording:
 - **Mixed precision is not a post-hoc lever.** Keeping, say, the quantile head in fp32 after
   QAT makes the model *worse*, not better (pinball 0.85): the fine-tune trains the trit
   pattern, so the fp32 latents of a ternarized layer are not a working fp32 layer
-  (`python/timestral_mixed.py`). A mixed artifact has to be trained mixed.
+  (`examples/timestral_sketch/python/timestral_mixed.py`). A mixed artifact has to be trained mixed.
 
 ## 3. The same app test
 
@@ -174,7 +174,7 @@ evaluation path.
 The latency gap is the backend, not the trits. 31–44 ms is PyTorch; 16–22 ms is the Zig
 engine, and that same engine run on fp32 latents is 3–8 % *faster* than on trits
 (`--serial`, three runs each). Compression is what 1.77 bits buys here — `Matrix.gemv`
-in `src/timestral/model.zig` converts the trits to floats and does the same multiply-adds,
+in `examples/timestral_sketch/timestral/model.zig` converts the trits to floats and does the same multiply-adds,
 so nothing is saved on the arithmetic side.
 
 Per stroke family (pinball, lower is better):
@@ -203,10 +203,10 @@ make quantize-timestral               # QAT latents -> packed artifact (+ width 
 make quantize-timestral-ptq           # released checkpoint -> plain-PTQ artifact (baseline)
 make timestral-eval                   # fp32, PTQ and ternary scores on 24 strokes
 make timestral-check                  # end-to-end parity against PyTorch
-python python/timestral_check_artifact.py   # dequantize the artifact, re-run PyTorch
-python python/timestral_table.py      # the per-family table above
-python python/timestral_figure.py modeldata/timestral_forecast_fp32.bin \
-    modeldata/timestral_forecast_ternary.bin docs/timestral-sketch.png
+python examples/timestral_sketch/python/timestral_check_artifact.py   # dequantize the artifact, re-run PyTorch
+python examples/timestral_sketch/python/timestral_table.py      # the per-family table above
+python examples/timestral_sketch/python/timestral_figure.py examples/timestral_sketch/modeldata/timestral_forecast_fp32.bin \
+    examples/timestral_sketch/modeldata/timestral_forecast_ternary.bin docs/timestral-sketch.png
 make sketch                           # the app, both backends
 ```
 
@@ -231,26 +231,31 @@ make sketch                           # the app, both backends
 
 ## Files
 
+Paths below are relative to `examples/timestral_sketch/`.
+
 ```
-web/sketch-a-series.html     the drawing app (one file, no dependencies)
-deploy/app.py                FastAPI: two backends behind one /api/forecast
-deploy/README.md             run instructions and the API contract
-src/timestral/model.zig      the network: patch embedding, attention, RoPE, SwiGLU, head
-src/timestral/engine.zig     padding, clampsym, advancing refine frame, capping
-src/timestral/weights.zig    safetensors loading + the framework's absmean quantizer
-src/timestral/artifact.zig   the packed artifact (config, fp32 tensors, pinned trits)
-src/timestral/eval.zig       stroke corpus + pinball/MASE/coverage
-src/timestral/fixture.zig    reader for the PyTorch reference dumps
-examples/timestral_sketch.zig  CLI: quantize / eval / forecast / serve + parity tests
-python/timestral_qat.py      quantization-aware fine-tuning
-python/timestral_fixtures.py dumps the reference intermediates the parity test uses
-python/timestral_parity.py   whole-forecast parity against PyTorch
+timestral_sketch.zig        CLI: quantize / eval / forecast / serve + parity tests
+timestral.zig               module root: re-exports model / weights / artifact / engine / eval / fixture
+timestral/model.zig         the network: patch embedding, attention, RoPE, SwiGLU, head
+timestral/engine.zig        padding, clampsym, advancing refine frame, capping
+timestral/weights.zig       safetensors loading + the framework's absmean quantizer
+timestral/artifact.zig      the packed artifact (config, fp32 tensors, pinned trits)
+timestral/eval.zig          stroke corpus + pinball/MASE/coverage
+timestral/fixture.zig       reader for the PyTorch reference dumps
+deploy/app.py               FastAPI: two backends behind one /api/forecast
+deploy/README.md            run instructions and the API contract
+web/sketch-a-series.html    the drawing app (one file, no dependencies)
+python/timestral_qat.py     quantization-aware fine-tuning
+python/timestral_fixtures.py    dumps the reference intermediates the parity test uses
+python/timestral_parity.py      whole-forecast parity against PyTorch
 python/timestral_check_artifact.py  dequantize the artifact and re-run PyTorch on it
-python/timestral_metrics.py  the metric definitions used by every script
-python/timestral_probe.py    what naive ternarization costs (per-tensor vs per-row)
-python/timestral_sensitivity.py  which layer groups tolerate ternary
-python/timestral_mixed.py    fp32/ternary mixtures after QAT (why they do not work)
-python/timestral_widths.py   the quantile-width sweep behind the calibration
-python/timestral_table.py    the per-family table
-reference/timestral/         vendored upstream inference package
+python/timestral_metrics.py     the metric definitions used by every script
+python/timestral_probe.py       what naive ternarization costs (per-tensor vs per-row)
+python/timestral_sensitivity.py which layer groups tolerate ternary
+python/timestral_mixed.py       fp32/ternary mixtures after QAT (why they do not work)
+python/timestral_widths.py      the quantile-width sweep behind the calibration
+python/timestral_table.py       the per-family table
+reference/timestral/        vendored upstream inference package
+modeldata/                  committed fixtures and eval records; the 21 MB checkpoint and
+                            the packed artifacts are fetched or rebuilt here, gitignored
 ```

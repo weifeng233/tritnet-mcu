@@ -4,10 +4,19 @@ All notable changes to this repository. Numbers are the ones the committed artif
 and eval records report; if a figure here disagrees with a document, the document and
 this file are both wrong and should be fixed together.
 
-## Unreleased — documentation cleanup
+## Unreleased
 
 ### Changed
 
+- **One directory per example.** The models no longer share `c/`, `python/`, `data/`,
+  `modeldata/`, `deploy/`, `reference/` or `web/` trees. Each example owns its code,
+  data and artifacts under `examples/<model>/` — `gpt_names/`, `gesture_cnn/`,
+  `liquid_sine/`, `timestral_sketch/` — and `src/` holds only the framework
+  (`src/framework.zig` plus `src/framework/`). `src/fp32.zig` became
+  `examples/gpt_names/fp32.zig`, `src/timestral*` became
+  `examples/timestral_sketch/timestral*`, and every example now writes to its own
+  `modeldata/`. Build steps, make targets, CI jobs and document paths all follow; the
+  21 MB checkpoint and the packed artifacts stay gitignored at their new paths.
 - **The decision records and the research notes are no longer published.** `docs/adr/`
   and `docs/research/` are listed in `.gitignore` and stay on disk as private notes. The
   reasoning they carried is now summarized, conclusions only, in the README's *Design

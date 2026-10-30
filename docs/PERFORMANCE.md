@@ -140,7 +140,7 @@ as the inference path, with 8-wide kernels on x86 and NEON:
   `pow(b1, step)` bias correction is computed once per step, and
   `char_to_id` is a 256-entry LUT.
 
-ReleaseFast on the 7940H, 20000 steps over `data/names.txt` (median of
+ReleaseFast on the 7940H, 20000 steps over `examples/gpt_names/data/names.txt` (median of
 5 runs): 0.30 s, roughly 67K steps/sec. Final average loss 2.2194 vs
 2.2199 scalar — the only
 numerical changes are reassociated sums (vector lane splits, FMA

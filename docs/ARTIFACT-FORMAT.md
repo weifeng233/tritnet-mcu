@@ -12,13 +12,13 @@ which is the point: the C engines in `c/` are exactly such readers.
 
 | magic | first bytes | written by | read by |
 | --- | --- | --- | --- |
-| `TRTL` v2 | `54 52 54 4C 02 00 00 00` | `src/timestral/artifact.zig` | `timestral-cli`, the parity tools |
-| `MGPTQ001` | `4D 47 50 54 51 30 30 31` | `examples/gpt_names.zig` | same example, round-trip check |
-| `CNN1Q002` | `43 4E 4E 31 51 30 30 32` | `examples/gesture_cnn.zig` | `c/cnn1d_inference.c` |
-| `CNN1V001` | `43 4E 4E 31 56 30 30 31` | `examples/gesture_cnn.zig` | `c/cnn1d_inference.c` |
-| `NCPSQ001` | `4E 43 50 53 51 30 30 31` | `examples/liquid_sine.zig` | `c/ncps_inference.c` |
-| `NCPSV001` | `4E 43 50 53 56 30 30 31` | `examples/liquid_sine.zig` | `c/ncps_inference.c` |
-| `TRFX` v1 | `54 52 46 58 01 00 00 00` | `python/timestral_fixtures.py` | `src/timestral/fixture.zig` |
+| `TRTL` v2 | `54 52 54 4C 02 00 00 00` | `examples/timestral_sketch/timestral/artifact.zig` | `timestral-cli`, the parity tools |
+| `MGPTQ001` | `4D 47 50 54 51 30 30 31` | `examples/gpt_names/gpt_names.zig` | same example, round-trip check |
+| `CNN1Q002` | `43 4E 4E 31 51 30 30 32` | `examples/gesture_cnn/gesture_cnn.zig` | `examples/gesture_cnn/c/cnn1d_inference.c` |
+| `CNN1V001` | `43 4E 4E 31 56 30 30 31` | `examples/gesture_cnn/gesture_cnn.zig` | `examples/gesture_cnn/c/cnn1d_inference.c` |
+| `NCPSQ001` | `4E 43 50 53 51 30 30 31` | `examples/liquid_sine/liquid_sine.zig` | `examples/liquid_sine/c/ncps_inference.c` |
+| `NCPSV001` | `4E 43 50 53 56 30 30 31` | `examples/liquid_sine/liquid_sine.zig` | `examples/liquid_sine/c/ncps_inference.c` |
+| `TRFX` v1 | `54 52 46 58 01 00 00 00` | `examples/timestral_sketch/python/timestral_fixtures.py` | `examples/timestral_sketch/timestral/fixture.zig` |
 
 All integers are **little-endian**. All `f32` are IEEE-754 binary32, stored as their
 bit pattern in a little-endian `u32`. Nothing is memory-mapped or native endian: a
@@ -227,7 +227,7 @@ A `V001` file is not a model and cannot be loaded as one: the magic differs on p
 
 ## 4. `TRFX` v1 — reference fixtures
 
-Written by `python/timestral_fixtures.py`, read by `src/timestral/fixture.zig`. It is a
+Written by `examples/timestral_sketch/python/timestral_fixtures.py`, read by `examples/timestral_sketch/timestral/fixture.zig`. It is a
 flat named-tensor dump of one PyTorch forward pass, so the Zig port can be compared
 stage by stage in a clone that has no checkpoint.
 
@@ -238,7 +238,7 @@ per tensor: u32 name_len | u8 name[name_len] | u32 ndim | u32 dims[ndim] | f32 d
 
 No alignment padding, no trailing checksum. Names are the reference implementation's
 own stage labels (`inputs`, `block_quantiles`, `forecast_sym`, …), which is why the
-fixtures must be generated from `reference/timestral` and not from this port: a reader
+fixtures must be generated from `examples/timestral_sketch/reference/timestral` and not from this port: a reader
 agreeing with an echo of itself proves nothing.
 
 ---
@@ -249,11 +249,11 @@ Two files carry no header because they are inputs to a comparison, not artifacts
 
 | file | shape | produced by |
 | --- | --- | --- |
-| `modeldata/timestral_strokes.bin` | `f32[24][ctx + h]`, row-major, `ctx=256`, `h=96` | `timestral-cli eval --dump` |
-| `modeldata/timestral_forecast_*.bin` | `f32[n][h][n_knots]` | `timestral-cli forecast --out` |
+| `examples/timestral_sketch/modeldata/timestral_strokes.bin` | `f32[24][ctx + h]`, row-major, `ctx=256`, `h=96` | `timestral-cli eval --dump` |
+| `examples/timestral_sketch/modeldata/timestral_forecast_*.bin` | `f32[n][h][n_knots]` | `timestral-cli forecast --out` |
 
 Both are little-endian `f32` and are documented as much by
-`python/timestral_parity.py` as by this file: the parity script reads them with
+`examples/timestral_sketch/python/timestral_parity.py` as by this file: the parity script reads them with
 `numpy.frombuffer(..., dtype="<f4")`.
 
 ---
@@ -263,22 +263,22 @@ Both are little-endian `f32` and are documented as much by
 ```bash
 zig build test --summary all            # includes the codec golden vectors and the
                                         # record-layout round-trip
-make quantize-timestral                 # TRTL from modeldata/timestral_qat
+make quantize-timestral                 # TRTL from examples/timestral_sketch/modeldata/timestral_qat
 make quantize-timestral-ptq             # TRTL baseline, --no-calibrate
 make deploy-check                       # CNN1Q002 / NCPSQ001 through the C engines
 make timestral-check                    # TRTL vs PyTorch, end to end
-python python/timestral_check_format.py modeldata/timestral_packed.bin
+python examples/timestral_sketch/python/timestral_check_format.py examples/timestral_sketch/modeldata/timestral_packed.bin
 ```
 
 That last command is the point of this page made executable:
-`python/timestral_check_format.py` is a reader written from **this document alone**,
+`examples/timestral_sketch/python/timestral_check_format.py` is a reader written from **this document alone**,
 not from the Zig code. It walks the canonical order, refuses anything it does not
 recognize, and prints the consumed byte count — which has to equal the file size. When
 this document claimed vectors carried a kind byte, that script desynchronized at the
 first vector; it is here so the next such mistake is caught by a command instead of by
 a reader with a debugger.
 
-Sizes quoted above (21 MB → 1.15 MB) are from `modeldata/timestral_eval_*.json`,
+Sizes quoted above (21 MB → 1.15 MB) are from `examples/timestral_sketch/modeldata/timestral_eval_*.json`,
 which records the byte count it measured next to the metrics. On the released
 `timestral_packed.bin` — a release asset rather than a committed file, since 2.3 MB of
 binaries do not belong in git history — the checker reports 75 records and 1,152,070

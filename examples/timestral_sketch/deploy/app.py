@@ -13,8 +13,8 @@ on top of each other for the same stroke. The ternary backend runs in the `times
 worker (one process, artifact loaded once, JSON lines over stdin/stdout); nothing in that
 path is PyTorch.
 
-    python deploy/app.py                     # http://127.0.0.1:8000
-    python deploy/app.py --backends ternary  # quantized model only
+    python examples/timestral_sketch/deploy/app.py                     # http://127.0.0.1:8000
+    python examples/timestral_sketch/deploy/app.py --backends ternary  # quantized model only
 
 Environment overrides: TIMESTRAL_WORKER (timestral-cli path), TIMESTRAL_ARTIFACT,
 TIMESTRAL_FP32 (checkpoint directory).

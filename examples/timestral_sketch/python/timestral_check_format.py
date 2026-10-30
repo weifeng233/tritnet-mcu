@@ -1,6 +1,7 @@
 """Parse a TRTL artifact using only docs/ARTIFACT-FORMAT.md as the specification.
 
-This is a deliberately separate implementation from src/timestral/artifact.zig: it
+This is a deliberately separate implementation from
+examples/timestral_sketch/timestral/artifact.zig: it
 exists so that the format document can be checked rather than trusted. If the document
 and the writer disagree, this script desynchronizes and the byte count at the end is
 wrong -- which is exactly how the "vector records carry a kind byte" error was found

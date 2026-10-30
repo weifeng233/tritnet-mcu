@@ -5,7 +5,7 @@
  * Vocab size: 27
  * Ternary weights: {-1, 0, +1} (base-3 packed)
  *
- * From: modeldata/bitnet_gpt.pth
+ * From: examples/gpt_names/modeldata/bitnet_gpt.pth
  */
 
 #ifndef BITNET_GPT_MODEL_H

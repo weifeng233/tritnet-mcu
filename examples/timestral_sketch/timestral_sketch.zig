@@ -287,7 +287,7 @@ fn cmdEval(io: std.Io, gpa: std.mem.Allocator, path: []const u8, args: EvalArgs)
 
 /// Read `n` strokes of `ctx + h` steps from a raw little-endian f32 file, forecast the
 /// `h`-step continuation of each, and write the quantiles `(n, h, knots)` as raw f32.
-/// `python/timestral_parity.py` feeds the same file to PyTorch and compares the two.
+/// `examples/timestral_sketch/python/timestral_parity.py` feeds the same file to PyTorch and compares the two.
 fn cmdForecast(io: std.Io, gpa: std.mem.Allocator, path: []const u8, corpus_path: []const u8, ctx: usize, h: usize, out_path: []const u8) !void {
     var loaded = try loadAny(gpa, io, path);
     var eng = engine.Engine.fromModel(loaded.ptr().*, gpa);

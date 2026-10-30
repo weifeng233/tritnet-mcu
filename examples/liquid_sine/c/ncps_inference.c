@@ -2,8 +2,8 @@
  * ncps_inference.c -- deployment check for the Neural Circuit Policies
  * (CfC / NCP) artifacts written by `example-ncps`.
  *
- * Loads a ternary-packed model (modeldata/ncps_{cfc,fc,ncp}_packed.bin) and
- * the held-out val split (modeldata/ncps_valset.bin), rebuilds the network
+ * Loads a ternary-packed model (examples/liquid_sine/modeldata/ncps_{cfc,fc,ncp}_packed.bin) and
+ * the held-out val split (examples/liquid_sine/modeldata/ncps_valset.bin), rebuilds the network
  * (backbone -> CfC layer stack -> projection head, exactly the ncps CfC
  * math), and verifies that the packed artifact reaches the val MSE the Zig
  * trainer reported before export. The model file carries the expected MSE
@@ -226,8 +226,8 @@ static const uint8_t *load_matrix(const uint8_t *m, size_t len, size_t cur,
 
 
 int main(int argc, char **argv) {
-    const char *model_path = argc > 1 ? argv[1] : "modeldata/ncps_ncp_packed.bin";
-    const char *valset_path = argc > 2 ? argv[2] : "modeldata/ncps_valset.bin";
+    const char *model_path = argc > 1 ? argv[1] : "examples/liquid_sine/modeldata/ncps_ncp_packed.bin";
+    const char *valset_path = argc > 2 ? argv[2] : "examples/liquid_sine/modeldata/ncps_valset.bin";
 
     /* ---- model ---- */
     size_t mlen;

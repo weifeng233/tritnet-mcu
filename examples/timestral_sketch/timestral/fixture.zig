@@ -1,4 +1,4 @@
-//! Reader for the reference fixture dumps produced by `python/timestral_fixtures.py`.
+//! Reader for the reference fixture dumps produced by `examples/timestral_sketch/python/timestral_fixtures.py`.
 //!
 //! Layout: `u32 magic 'TRFX' | u32 version | u32 count`, then per tensor
 //! `u32 name_len | name | u32 ndim | u32 dims[ndim] | f32 data`.

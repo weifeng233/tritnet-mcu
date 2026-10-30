@@ -1560,7 +1560,7 @@ fn train_phase(m: *Model, comptime qat: bool, steps: usize, lr: f32, batch: usiz
 
 // ---------------------------------------------------------------------------
 // packed model + val split export (framework/packed_model.zig; consumed by
-// c/ncps_inference.c)
+// examples/liquid_sine/c/ncps_inference.c)
 // ---------------------------------------------------------------------------
 
 /// One ternary matrix record. The wiring mask, when present, selects the

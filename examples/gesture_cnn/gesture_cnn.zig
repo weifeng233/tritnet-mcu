@@ -26,7 +26,7 @@
 //!   3. verification      -- accuracy + confusion matrix for fp32 / PTQ / QAT,
 //!                           latency + MACs, ternary storage accounting
 //!   4. packed export     -- 5 trits per byte, plus the val split for the C
-//!                           deployment engine in c/cnn1d_inference.c
+//!                           deployment engine in examples/gesture_cnn/c/cnn1d_inference.c
 //!   5. round-trip check  -- reload the packed file, re-evaluate; accuracy must
 //!                           match the pre-export model exactly
 //!
@@ -649,7 +649,7 @@ fn bench_latency(ternary_weights: bool, iters: usize) f64 {
 }
 
 // ---------------------------------------------------------------------------
-// packed model + val split export (consumed by c/cnn1d_inference.c)
+// packed model + val split export (consumed by examples/gesture_cnn/c/cnn1d_inference.c)
 // ---------------------------------------------------------------------------
 
 fn export_model(io: std.Io, path: []const u8, expected_acc: f64) !usize {
@@ -670,7 +670,7 @@ fn export_model(io: std.Io, path: []const u8, expected_acc: f64) !usize {
     w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB1].w));
     w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB2].w));
     w.putBytes(buf[0..], &cur, std.mem.sliceAsBytes(params[PB3].w));
-    // The footer is the trainer's own val accuracy. c/cnn1d_inference.c recomputes
+    // The footer is the trainer's own val accuracy. examples/gesture_cnn/c/cnn1d_inference.c recomputes
     // the metric from the trits alone and compares, so a decode bug fails the
     // deployment check instead of printing a plausible number.
     w.putF64(buf[0..], &cur, expected_acc);

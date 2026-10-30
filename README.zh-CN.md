@@ -13,7 +13,7 @@ fp32 预训练、BitNet 风格量化感知训练（QAT）、留出集验证、�
 
 框架本体在 `src/framework.zig`（RNG、三元编解码、absmean QAT 量化器、
 Adam + 余弦调度、打包模型容器、计时）。`examples/` 目录提供四个刻意
-不同的模型家族样例；`c/` 中的 C 引擎用于部署验证，仅凭打包产物复现
+不同的模型家族样例；`examples/*/c/` 中的 C 引擎用于部署验证，仅凭打包产物复现
 训练器的全部指标。
 
 ## 流水线
@@ -64,7 +64,7 @@ make timestral-check                    # 样例 4 与 PyTorch 的端到端数�
 make sketch                             # 样例 4 的绘图预测网页（http://127.0.0.1:8000）
 ```
 
-依赖：**Zig 0.16.0**、`make`，Python 3.11+ 仅用于工具链（`python/`、`deploy/`）。
+依赖：**Zig 0.16.0**、`make`，Python 3.11+ 仅用于工具链（`examples/*/python/`、`examples/timestral_sketch/deploy/`）。
 Zig 部分零依赖。Python 依赖由 `uv` 锁定：
 
 ```bash
@@ -111,7 +111,7 @@ uv sync --extra serve                # 绘图服务
 生成新人名。以三元权重训练并部署后，模型文件体积约为 fp32 权重的
 1/22。
 
-以下结果在 data/names.txt 上测得（80/20 训练/留出划分，20000 步 fp32
+以下结果在 examples/gpt_names/data/names.txt 上测得（80/20 训练/留出划分，20000 步 fp32
 预训练 + 5000 步 QAT，Ryzen 9 7940H 上共约 1 秒）：
 
 ```
@@ -131,7 +131,7 @@ summary
 ```
 
 ```bash
-zig build --release=fast example-gpt    # 写出 modeldata/tritnetmcu_packed.bin
+zig build --release=fast example-gpt    # 写出 examples/gpt_names/modeldata/tritnetmcu_packed.bin
 ```
 
 ## 样例 2 — `gesture_cnn`：TinyML 传感器分类器
@@ -176,7 +176,7 @@ packed round-trip: OK (lossless)   qat 恢复 fp32->ptq 损失差距的 99.9%
 卷积核与全连接层均以每权重 1.6 比特的 {-1, 0, +1} trit 运行。
 
 ```bash
-zig build --release=fast example-cnn    # 写出 modeldata/cnn1d_packed.bin + cnn1d_valset.bin
+zig build --release=fast example-cnn    # 写出 examples/gesture_cnn/modeldata/cnn1d_packed.bin + cnn1d_valset.bin
 make cnn-c                              # C 部署校验（或：make deploy-check）
 ```
 
@@ -221,13 +221,13 @@ fp32 的 ODE 物理参数，仅 675 个突触强度为三元。）所有打包�
 无损往返；在与 ncps 示例完全相同的输入序列上，部署权重下的 QAT CfC
 以 0.000603 MSE 跟踪倍频正弦。
 
-与参考实现的差异（记录在 `examples/liquid_sine.zig`，均为有意设计）：
+与参考实现的差异（记录在 `examples/liquid_sine/liquid_sine.zig`，均为有意设计）：
 布线 RNG 采用框架的 xorshift、按布线实例播种（构造算法相同，具体
 突触选择不同）；权重用 Xavier-Gauss 初始化；未布线骨干为 64 单元
 （参考实现为 128）；mixed_memory（fp32 LSTM 增强）未移植。
 
 ```bash
-zig build --release=fast example-ncps   # 写出 modeldata/ncps_{cfc,fc,ncp,ltc}_packed.bin + ncps_valset.bin
+zig build --release=fast example-ncps   # 写出 examples/liquid_sine/modeldata/ncps_{cfc,fc,ncp,ltc}_packed.bin + ncps_valset.bin
 make ncps-check                         # 对全部四个产物做 C 部署校验
 ```
 
@@ -257,7 +257,7 @@ fp32（safetensors，PyTorch）       20,843,960 B
 ```
 
 朴素训练后量化会让误差涨到三倍；2500 步量化感知微调（4 线程 CPU 约 9.5 分钟，
-`python/timestral_qat.py`）把其中 73% 的差距补回来。趋势类和随机游走类笔画与 fp32
+`examples/timestral_sketch/python/timestral_qat.py`）把其中 73% 的差距补回来。趋势类和随机游走类笔画与 fp32
 相差不超过 10%，而需要保住振幅的笔画（手绘曲线、正弦）明显被压平（误差 2.2–2.8 倍）——
 网页把两条中位数曲线叠在一起画，这个代价是可见的，而不是被藏起来。
 
@@ -268,13 +268,13 @@ make timestral-check                    # 与 PyTorch 在同样笔画上的数�
 make sketch                             # 打开 http://127.0.0.1:8000
 ```
 
-网页（`web/sketch-a-series.html`）、服务端（`deploy/app.py`）以及完整记录
+网页（`examples/timestral_sketch/web/sketch-a-series.html`）、服务端（`examples/timestral_sketch/deploy/app.py`）以及完整记录
 （打包格式、哪些地方会坏、为什么去掉梯度掩码、分位数宽度标定）见
-[docs/TIMESTRAL.md](docs/TIMESTRAL.md) 与 [deploy/README.md](deploy/README.md)。
+[docs/TIMESTRAL.md](docs/TIMESTRAL.md) 与 [examples/timestral_sketch/deploy/README.md](examples/timestral_sketch/deploy/README.md)。
 
 ## C 部署引擎
 
-`c/` 是相互独立的 C 部署引擎 —— 引擎加载打包模型和导出的验证集，
+`examples/*/c/` 是相互独立的 C 部署引擎 —— 引擎加载打包模型和导出的验证集，
 解码 trit 后以加/跳过/减（add/skip/subtract）方式运行模型，不使用
 逐权重的浮点表，然后重新计算训练器的验证指标并比对：
 
@@ -288,7 +288,7 @@ make deploy-check  # 两者均执行
 
 ## fp32 基线
 
-`src/fp32.zig`（及对应的 C 实现 `c/microgpt.c`）是 fp32 预训练路径的
+`examples/gpt_names/fp32.zig`（及对应的 C 实现 `examples/gpt_names/c/microgpt.c`）是 fp32 预训练路径的
 对照参考 —— 最初的 microGPT，仅 fp32，在同一份人名数据上训练。训练
 与推理使用两条独立的前向路径 —— `gpt_forward` 为反向传播保存激活，
 `gpt_forward_infer` 是专用的单 token 路径，logits 与之相差不超过 fp32
@@ -305,10 +305,11 @@ make deploy-check  # 两者均执行
 
 ## 旧版 PyTorch 路径
 
-`python/train_qat.py` 是最初的 PyTorch QAT 训练器，`python/export.py`
-是它的 C 头文件导出器（生成 `c/model.h`，由 `c/inference.c` 消费）。
+`examples/gpt_names/python/train_qat.py` 是最初的 PyTorch QAT 训练器，
+`examples/gpt_names/python/export.py` 是它的 C 头文件导出器（生成
+`examples/gpt_names/c/model.h`，由 `examples/gpt_names/c/inference.c` 消费）。
 Zig 框架已取代它们；保留这两个脚本是因为其检查点产物
-（`modeldata/bitnet_gpt.pth`、`modeldata/bitnet_gpt_weights.npz`）记录
+（`examples/gpt_names/modeldata/bitnet_gpt.pth`、`examples/gpt_names/modeldata/bitnet_gpt_weights.npz`）记录
 了框架所沿用的量化语义。启发本方案的两个项目
 [BitNetMCU](https://github.com/cpldcpu/BitNetMCU) 与
 [microGPT-C](https://github.com/vixhal-baraiya/microgpt-c) 的署名见
@@ -319,18 +320,13 @@ Zig 框架已取代它们；保留这两个脚本是因为其检查点产物
 ```
 src/framework.zig    框架入口：聚合六个核心模块
   src/framework/       rng / ternary / quant / adam / packed_model / timing
-src/fp32.zig         fp32 参考基线（最初的 microGPT）
-src/timestral.zig    样例 4：Timestral-5M 部署模块
-  src/timestral/       model / engine / weights / artifact / eval / fixture
-examples/            样例，每个样例一个二进制
-  gpt_names.zig        字符级 micro-GPT（names.txt 人名）
-  gesture_cnn.zig      TinyML 1D-CNN 手势分类器
-  liquid_sine.zig      CfC/LTC 神经回路策略（倍频正弦）
-  timestral_sketch.zig Timestral-5M：量化 / 评估 / 预测 / 服务
-c/                   C 部署引擎（cnn1d、ncps）+ fp32 C 对照
-deploy/              sketch-a-series 服务端（FastAPI）及其说明
-python/              旧版 PyTorch QAT 路径，以及 Timestral 工具（QAT、数值校验、作图）
-reference/           内嵌参考项目：timestral/（Apache-2.0）、sketch-a-series/
-web/                 基准测试的单页可视化，以及 sketch-a-series 网页
-data/ modeldata/ docs/
+examples/            每个模型一个目录，代码、数据、产物都在自己的目录里
+  gpt_names/           gpt_names.zig、fp32.zig（基线）、data/、c/、python/、modeldata/、web/
+  gesture_cnn/         gesture_cnn.zig、c/、modeldata/、web/
+  liquid_sine/         liquid_sine.zig、c/、modeldata/
+  timestral_sketch/    timestral_sketch.zig、timestral/（移植模块）、deploy/、python/、
+                       reference/、modeldata/、web/
+docs/                格式规范、性能说明、Timestral 专题
 ```
+
+每个样例把产物写进自己的 `modeldata/`；除 `src/framework/` 外，样例之间没有共享代码。

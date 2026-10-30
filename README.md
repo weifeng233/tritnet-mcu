@@ -15,7 +15,7 @@ example, on a laptop.
 The framework lives in `src/framework.zig` (RNG, ternary codec, absmean
 QAT quantizer, Adam + cosine schedule, packed-model container, timing).
 The `examples/` directory drives it with four deliberately different
-model families; the C engines in `c/` are the deploy leg, re-deriving
+model families; the C engines in `examples/*/c/` are the deploy leg, re-deriving
 every trainer number from the packed artifacts alone.
 
 ## The pipeline
@@ -68,7 +68,7 @@ make sketch                             # example 4: the drawing app (http://127
 ```
 
 Requirements: **Zig 0.16.0**, `make`, and Python 3.11+ only for the tools
-(`python/`, `deploy/`). The Zig half has no dependencies at all. Python extras are
+(`examples/*/python/`, `examples/timestral_sketch/deploy/`). The Zig half has no dependencies at all. Python extras are
 locked with `uv`:
 
 ```bash
@@ -122,7 +122,7 @@ microGPT-C (4,192 parameters: 1 layer, 4 heads, 16-dim embeddings,
 Trained and deployed ternary, the model file is ~22x smaller than the
 fp32 weights.
 
-Measured on data/names.txt (80/20 train/hold-out split, 20000 fp32
+Measured on examples/gpt_names/data/names.txt (80/20 train/hold-out split, 20000 fp32
 steps then 5000 QAT steps, ~1 s total on a Ryzen 9 7940H):
 
 ```
@@ -142,7 +142,7 @@ summary
 ```
 
 ```bash
-zig build --release=fast example-gpt    # writes modeldata/tritnetmcu_packed.bin
+zig build --release=fast example-gpt    # writes examples/gpt_names/modeldata/tritnetmcu_packed.bin
 ```
 
 ## Example 2 — `gesture_cnn`: TinyML sensor classifier
@@ -191,7 +191,7 @@ all 100% while every kernel runs as {-1, 0, +1} trits at 1.6 bits per
 weight.
 
 ```bash
-zig build --release=fast example-cnn    # writes modeldata/cnn1d_packed.bin + cnn1d_valset.bin
+zig build --release=fast example-cnn    # writes examples/gesture_cnn/modeldata/cnn1d_packed.bin + cnn1d_valset.bin
 make cnn-c                              # C deployment check (or: make deploy-check)
 ```
 
@@ -244,14 +244,14 @@ and on the exact ncps example sequence the QAT CfC tracks the
 double-frequency sine at 0.000603 MSE under deployment weights.
 
 Deliberate deviations from the reference, documented in
-`examples/liquid_sine.zig`: the wiring RNG is the framework's xorshift
+`examples/liquid_sine/liquid_sine.zig`: the wiring RNG is the framework's xorshift
 seeded per wiring (same construction algorithm, different concrete
 synapse choices), weights use Xavier-Gauss init, the unwired backbone is
 64 units instead of 128, and mixed_memory (the fp32 LSTM augmentation)
 is not ported.
 
 ```bash
-zig build --release=fast example-ncps   # writes modeldata/ncps_{cfc,fc,ncp,ltc}_packed.bin + ncps_valset.bin
+zig build --release=fast example-ncps   # writes examples/liquid_sine/modeldata/ncps_{cfc,fc,ncp,ltc}_packed.bin + ncps_valset.bin
 make ncps-check                         # C deployment check on all four artifacts
 ```
 
@@ -283,7 +283,7 @@ ternary artifact (Zig, 1.77 bit)  1,152,070 B   (18.1x smaller)
 ```
 
 Naive ternarization triples the error; 2,500 steps of quantization-aware fine-tuning
-(9.5 min on four CPU threads, `python/timestral_qat.py`) recover 73 % of that gap. What
+(9.5 min on four CPU threads, `examples/timestral_sketch/python/timestral_qat.py`) recover 73 % of that gap. What
 survives best is what a sketch mostly is: trends and noisy walks come out within 10 % of
 fp32, while strokes whose continuation needs an amplitude — drawn curves and sinusoids —
 come out visibly damped (2.2–2.8× the pinball). The app draws both medians on the same
@@ -296,14 +296,14 @@ make timestral-check                 # parity against PyTorch on the same stroke
 make sketch                          # http://127.0.0.1:8000, both backends
 ```
 
-The page (`web/sketch-a-series.html`), the server (`deploy/app.py`) and the whole story —
+The page (`examples/timestral_sketch/web/sketch-a-series.html`), the server (`examples/timestral_sketch/deploy/app.py`) and the whole story —
 artifact format, what breaks, why the gradient mask had to go, the quantile-width
 calibration — are in [docs/TIMESTRAL.md](docs/TIMESTRAL.md) and
-[deploy/README.md](deploy/README.md).
+[examples/timestral_sketch/deploy/README.md](examples/timestral_sketch/deploy/README.md).
 
 ## The deploy leg: C engines
 
-`c/` holds independent C deployment engines — they load the packed
+`examples/*/c/` holds independent C deployment engines — they load the packed
 artifacts plus the exported val split, decode the trits and run the
 models add/skip/subtract style (no per-weight float table), then
 re-derive the trainer's val metric and compare:
@@ -319,7 +319,7 @@ the build target.
 
 ## The fp32 baseline
 
-`src/fp32.zig` (with its C twin `c/microgpt.c`) is the reference point
+`examples/gpt_names/fp32.zig` (with its C twin `examples/gpt_names/c/microgpt.c`) is the reference point
 the framework's fp32 pretrain leg is validated against — the original
 microGPT, fp32 only, trained on the same names data. Training and
 inference use separate forward passes — `gpt_forward` stores activations
@@ -340,11 +340,12 @@ condition is now part of the table.
 
 ## Legacy PyTorch path
 
-`python/train_qat.py` is the original PyTorch QAT trainer and
-`python/export.py` its C-header exporter (`c/model.h`, consumed by
-`c/inference.c`). The Zig framework supersedes it; the scripts are kept
-because their checkpoint artifacts (`modeldata/bitnet_gpt.pth`,
-`modeldata/bitnet_gpt_weights.npz`) document the quantization semantics
+`examples/gpt_names/python/train_qat.py` is the original PyTorch QAT trainer and
+`examples/gpt_names/python/export.py` its C-header exporter (`examples/gpt_names/c/model.h`,
+consumed by `examples/gpt_names/c/inference.c`). The Zig framework supersedes it; the
+scripts are kept because their checkpoint artifacts
+(`examples/gpt_names/modeldata/bitnet_gpt.pth`,
+`examples/gpt_names/modeldata/bitnet_gpt_weights.npz`) document the quantization semantics
 the framework mirrors. The two projects that inspired the scheme,
 [BitNetMCU](https://github.com/cpldcpu/BitNetMCU) and
 [microGPT-C](https://github.com/vixhal-baraiya/microgpt-c), are credited in
@@ -355,18 +356,14 @@ the framework mirrors. The two projects that inspired the scheme,
 ```
 src/framework.zig    framework entry: re-exports the six core modules
   src/framework/       rng / ternary / quant / adam / packed_model / timing
-src/fp32.zig         fp32 reference baseline (the original microGPT)
-src/timestral.zig    example 4: Timestral-5M deployment module
-  src/timestral/       model / engine / weights / artifact / eval / fixture
-examples/            worked examples, one binary each
-  gpt_names.zig        char-level micro-GPT on names.txt
-  gesture_cnn.zig      TinyML 1D-CNN gesture classifier
-  liquid_sine.zig      CfC/LTC Neural Circuit Policies, sine doubling
-  timestral_sketch.zig Timestral-5M: quantize / eval / forecast / serve
-c/                   C deployment engines (cnn1d, ncps) + fp32 C reference
-deploy/              the sketch-a-series server (FastAPI) + its README
-python/              legacy PyTorch QAT path, plus the Timestral tools (QAT, parity, figures)
-reference/           vendored reference: timestral/ (Apache-2.0), sketch-a-series/
-web/                 single-page visualizations and the sketch-a-series app
-data/ modeldata/ docs/
+examples/            one directory per model; each owns its code, data and artifacts
+  gpt_names/           gpt_names.zig, fp32.zig (the baseline), data/, c/, python/, modeldata/, web/
+  gesture_cnn/         gesture_cnn.zig, c/, modeldata/, web/
+  liquid_sine/         liquid_sine.zig, c/, modeldata/
+  timestral_sketch/    timestral_sketch.zig, timestral/ (the port), deploy/, python/,
+                       reference/, modeldata/, web/
+docs/                format spec, performance notes, the Timestral write-up
 ```
+
+Every example writes its artifacts to its own `modeldata/`; nothing is shared between
+them but `src/framework/`.

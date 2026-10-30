@@ -1,8 +1,8 @@
 /*
  * cnn1d_inference.c -- deployment check for the TinyML 1D-CNN artifact.
  *
- * Loads the ternary-packed model (modeldata/cnn1d_packed.bin) and the held-out
- * val split (modeldata/cnn1d_valset.bin) written by `example-cnn`, rebuilds
+ * Loads the ternary-packed model (examples/gesture_cnn/modeldata/cnn1d_packed.bin) and the held-out
+ * val split (examples/gesture_cnn/modeldata/cnn1d_valset.bin) written by `example-cnn`, rebuilds
  * the network, and verifies that the packed artifact reaches the same val
  * accuracy as the Zig trainer reported before export.
  *
@@ -129,8 +129,8 @@ static double now_s(void) {
 }
 
 int main(int argc, char **argv) {
-    const char *model_path = argc > 1 ? argv[1] : "modeldata/cnn1d_packed.bin";
-    const char *valset_path = argc > 2 ? argv[2] : "modeldata/cnn1d_valset.bin";
+    const char *model_path = argc > 1 ? argv[1] : "examples/gesture_cnn/modeldata/cnn1d_packed.bin";
+    const char *valset_path = argc > 2 ? argv[2] : "examples/gesture_cnn/modeldata/cnn1d_valset.bin";
 
     /* ---- model ---- */
     size_t mlen;
