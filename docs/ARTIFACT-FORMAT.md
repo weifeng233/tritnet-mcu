@@ -258,15 +258,26 @@ Both are little-endian `f32` and are documented as much by
 
 ---
 
-## 6. Reproducing the artifacts
+## 6. Reproducing the artifacts, and checking this document
 
 ```bash
-zig build test --summary all            # includes the codec golden vectors
+zig build test --summary all            # includes the codec golden vectors and the
+                                        # record-layout round-trip
 make quantize-timestral                 # TRTL from modeldata/timestral_qat
 make quantize-timestral-ptq             # TRTL baseline, --no-calibrate
 make deploy-check                       # CNN1Q002 / NCPSQ001 through the C engines
 make timestral-check                    # TRTL vs PyTorch, end to end
+python python/timestral_check_format.py modeldata/timestral_packed.bin
 ```
 
+That last command is the point of this page made executable:
+`python/timestral_check_format.py` is a reader written from **this document alone**,
+not from the Zig code. It walks the canonical order, refuses anything it does not
+recognize, and prints the consumed byte count — which has to equal the file size. When
+this document claimed vectors carried a kind byte, that script desynchronized at the
+first vector; it is here so the next such mistake is caught by a command instead of by
+a reader with a debugger.
+
 Sizes quoted above (21 MB → 1.15 MB) are from `modeldata/timestral_eval_*.json`,
-which records the byte count it measured next to the metrics.
+which records the byte count it measured next to the metrics. On the committed
+artifact the checker reports 75 records and 1,152,070 bytes consumed.

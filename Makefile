@@ -115,6 +115,7 @@ timestral-eval: $(TIMESTRAL_CLI)
 
 timestral-check: timestral-eval
 	python python/timestral_parity.py
+	python python/timestral_check_format.py $(TIMESTRAL_PACKED) $(TIMESTRAL_PTQ)
 
 timestral-qat:
 	python python/timestral_qat.py --steps 2500 --batch 32 --lr 1.5e-4
